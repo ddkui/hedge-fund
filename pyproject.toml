@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.backend"
+
+[project]
+name = "hedge-fund"
+version = "0.1.0"
+requires-python = ">=3.11,<4"
+description = "AI-powered self-hosted hedge fund"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["shared*", "agents*", "gateway*", "data*"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]

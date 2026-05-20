@@ -10,9 +10,9 @@ services:
   timescaledb:
     image: timescale/timescaledb:latest-pg16
     environment:
-      POSTGRES_DB: hedgefund
-      POSTGRES_USER: hedgefund
-      POSTGRES_PASSWORD: changeme
+      POSTGRES_DB: ${DB_NAME:-hedgefund}
+      POSTGRES_USER: ${DB_USER:-hedgefund}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-changeme}
     ports:
       - "5432:5432"
     volumes:
