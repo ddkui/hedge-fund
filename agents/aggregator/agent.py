@@ -91,10 +91,10 @@ class SignalAggregatorAgent(AnalysisAgent):
             else:
                 consensus = "consensus_neutral"
 
-            agent_breakdown = {
-                sig["agent"]: {"signal": sig["signal_type"], "confidence": sig["confidence"]}
+            agent_breakdown = [
+                {"agent": sig["agent"], "signal": sig["signal_type"], "confidence": sig["confidence"]}
                 for sig in signals[:5]
-            }
+            ]
 
             await self.store_signal(
                 symbol=symbol,
