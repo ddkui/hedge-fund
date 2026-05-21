@@ -40,6 +40,10 @@ class TechnicalAnalysisAgent(AnalysisAgent):
         atr_val = atr(df["high"], df["low"], df["close"]).iloc[-1]
         obv_trend = obv(df["close"], df["volume"]).diff(5).iloc[-1]
 
+        if any(pd.isna(v) for v in [rsi_val, macd_hist, macd_prev, bb_upper, bb_lower, atr_val, obv_trend]):
+            self.logger.warning("technical_nan_indicator", symbol=symbol)
+            return
+
         signals = []
 
         # RSI signals
@@ -50,15 +54,16 @@ class TechnicalAnalysisAgent(AnalysisAgent):
         elif 45 < rsi_val < 55:
             signals.append(("neutral_rsi", 40))
 
-        # MACD crossover
+        # MACD crossover (only meaningful transitions)
         if macd_hist > 0 and macd_prev <= 0:
             signals.append(("macd_bullish_cross", 75))
         elif macd_hist < 0 and macd_prev >= 0:
             signals.append(("macd_bearish_cross", 75))
         elif macd_hist > 0:
             signals.append(("macd_bullish", 55))
-        else:
+        elif macd_hist < 0:
             signals.append(("macd_bearish", 55))
+        # else: flat MACD — no signal
 
         # Bollinger Band position
         bb_pct = (price - bb_lower) / (bb_upper - bb_lower) if bb_upper != bb_lower else 0.5
