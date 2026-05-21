@@ -50,7 +50,7 @@ class SentimentAgent(AnalysisAgent):
             for result, row in relevant:
                 source = row["source"].lower() if row["source"] else "unknown"
                 weight = SOURCE_WEIGHTS.get(source, 0.5)
-                weighted_compound += result.compound * weight * result.score
+                weighted_compound += result.compound * weight
                 total_weight += weight
 
             if total_weight == 0:
