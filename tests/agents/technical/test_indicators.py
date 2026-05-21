@@ -26,9 +26,10 @@ def test_rsi_returns_series_between_0_and_100():
 
 
 def test_rsi_overbought_gt_70():
-    closes = pd.Series([100.0] * 14 + [i * 2.0 for i in range(1, 20)])
+    # 50 bars of steady gains — Wilder's RSI should be well above 70
+    closes = pd.Series([float(i) for i in range(50, 100)])
     result = rsi(closes, period=14)
-    assert result.dropna().iloc[-1] > 50
+    assert result.dropna().iloc[-1] > 70
 
 
 def test_macd_returns_dict_with_line_signal_hist():

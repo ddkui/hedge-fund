@@ -6,10 +6,12 @@ def rsi(close: pd.Series, period: int = 14) -> pd.Series:
     delta = close.diff()
     gain = delta.clip(lower=0)
     loss = -delta.clip(upper=0)
-    avg_gain = gain.ewm(span=period, min_periods=period).mean()
-    avg_loss = loss.ewm(span=period, min_periods=period).mean()
-    rs = avg_gain / avg_loss.replace(0, np.nan)
-    return 100 - (100 / (1 + rs))
+    avg_gain = gain.ewm(com=period - 1, min_periods=period).mean()
+    avg_loss = loss.ewm(com=period - 1, min_periods=period).mean()
+    rs = avg_gain / avg_loss.where(avg_loss > 0, np.nan)
+    rsi_val = 100 - (100 / (1 + rs))
+    # When avg_loss == 0 (pure gains), RSI is 100
+    return rsi_val.where(avg_loss != 0, 100.0)
 
 
 def macd(close: pd.Series, fast: int = 12, slow: int = 26, signal: int = 9) -> dict:
@@ -37,10 +39,11 @@ def atr(high: pd.Series, low: pd.Series, close: pd.Series, period: int = 14) -> 
 
 
 def obv(close: pd.Series, volume: pd.Series) -> pd.Series:
-    direction = close.diff().apply(lambda x: 1 if x > 0 else (-1 if x < 0 else 0))
+    direction = np.sign(close.diff()).fillna(1)
     return (direction * volume).cumsum()
 
 
 def vwap(high: pd.Series, low: pd.Series, close: pd.Series, volume: pd.Series) -> pd.Series:
     typical_price = (high + low + close) / 3
-    return (typical_price * volume).cumsum() / volume.cumsum()
+    cum_vol = volume.cumsum()
+    return (typical_price * volume).cumsum() / cum_vol.replace(0, np.nan)
