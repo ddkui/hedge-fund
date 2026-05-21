@@ -21,12 +21,16 @@ class AnalysisAgent(BaseAgent):
             now, self.name, symbol, signal_type, confidence, reasoning,
             json.dumps(metadata or {}),
         )
-        await self.bus.publish(f"signals.{self.name}", {
-            "agent": self.name,
-            "symbol": symbol,
-            "signal_type": signal_type,
-            "confidence": confidence,
-            "reasoning": reasoning,
-            "metadata": metadata or {},
-            "time": now.isoformat(),
-        })
+        safe_metadata = json.loads(json.dumps(metadata or {}))
+        try:
+            await self.bus.publish(f"signals.{self.name}", {
+                "agent": self.name,
+                "symbol": symbol,
+                "signal_type": signal_type,
+                "confidence": confidence,
+                "reasoning": reasoning,
+                "metadata": safe_metadata,
+                "time": now.isoformat(),
+            })
+        except Exception as exc:
+            self.logger.error("signal_publish_failed", signal_type=signal_type, symbol=symbol, error=str(exc))

@@ -31,8 +31,11 @@ async def test_store_signal_calls_execute():
     agent.db.execute.assert_called_once()
     call = agent.db.execute.call_args
     assert "INSERT INTO signals" in call[0][0]
-    assert "AAPL" in call[0][1:]
-    assert 75.0 in call[0][1:]
+    args = call[0][1:]  # skip the SQL string
+    assert args[1] == "test_analysis"   # $2 agent name
+    assert args[2] == "AAPL"            # $3 symbol
+    assert args[3] == "momentum"        # $4 signal_type
+    assert args[4] == 75.0              # $5 confidence
 
 
 @pytest.mark.asyncio
@@ -61,3 +64,9 @@ async def test_store_signal_none_symbol_allowed():
         reasoning="Fed hiking cycle detected",
     )
     agent.db.execute.assert_called_once()
+    agent.bus.publish.assert_called_once()
+    pub_call = agent.bus.publish.call_args
+    assert pub_call[0][1]["symbol"] is None
+    # Verify None goes into the $3 slot
+    exec_args = agent.db.execute.call_args[0][1:]
+    assert exec_args[2] is None  # $3 symbol
