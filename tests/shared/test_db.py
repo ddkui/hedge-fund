@@ -30,3 +30,56 @@ async def test_database_fetch_calls_pool():
         except Exception:
             pass  # asyncpg Record mocking is complex; testing the call path is sufficient
         mock_conn.fetch.assert_called_once_with("SELECT 1")
+
+def make_mock_db():
+    mock_pool = MagicMock()
+    mock_conn = AsyncMock()
+    mock_pool.acquire = MagicMock(return_value=AsyncMock(
+        __aenter__=AsyncMock(return_value=mock_conn),
+        __aexit__=AsyncMock(return_value=False)
+    ))
+    return mock_pool, mock_conn
+
+@pytest.mark.asyncio
+async def test_database_disconnect_closes_pool():
+    mock_pool = AsyncMock()
+    mock_create = AsyncMock(return_value=mock_pool)
+    with patch("shared.db.asyncpg.create_pool", new=mock_create):
+        db = Database("postgresql://hedgefund:changeme@localhost:5432/hedgefund")
+        await db.connect()
+        await db.disconnect()
+        mock_pool.close.assert_called_once()
+
+@pytest.mark.asyncio
+async def test_database_fetchrow_calls_conn():
+    mock_pool, mock_conn = make_mock_db()
+    mock_conn.fetchrow = AsyncMock(return_value=None)
+    mock_create = AsyncMock(return_value=mock_pool)
+    with patch("shared.db.asyncpg.create_pool", new=mock_create):
+        db = Database("postgresql://hedgefund:changeme@localhost:5432/hedgefund")
+        await db.connect()
+        result = await db.fetchrow("SELECT 1 WHERE false")
+        mock_conn.fetchrow.assert_called_once_with("SELECT 1 WHERE false")
+        assert result is None
+
+@pytest.mark.asyncio
+async def test_database_execute_calls_conn():
+    mock_pool, mock_conn = make_mock_db()
+    mock_conn.execute = AsyncMock()
+    mock_create = AsyncMock(return_value=mock_pool)
+    with patch("shared.db.asyncpg.create_pool", new=mock_create):
+        db = Database("postgresql://hedgefund:changeme@localhost:5432/hedgefund")
+        await db.connect()
+        await db.execute("INSERT INTO test VALUES ($1)", "val")
+        mock_conn.execute.assert_called_once_with("INSERT INTO test VALUES ($1)", "val")
+
+@pytest.mark.asyncio
+async def test_database_executemany_calls_conn():
+    mock_pool, mock_conn = make_mock_db()
+    mock_conn.executemany = AsyncMock()
+    mock_create = AsyncMock(return_value=mock_pool)
+    with patch("shared.db.asyncpg.create_pool", new=mock_create):
+        db = Database("postgresql://hedgefund:changeme@localhost:5432/hedgefund")
+        await db.connect()
+        await db.executemany("INSERT INTO test VALUES ($1)", [("a",), ("b",)])
+        mock_conn.executemany.assert_called_once_with("INSERT INTO test VALUES ($1)", [("a",), ("b",)])

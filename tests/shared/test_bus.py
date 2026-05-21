@@ -36,3 +36,41 @@ async def test_subscribe_yields_parsed_messages():
             messages.append(msg)
             break
         assert messages[0]["symbol"] == "BTC"
+
+@pytest.mark.asyncio
+async def test_disconnect_closes_client():
+    mock_redis = AsyncMock()
+    with patch("shared.bus.redis.asyncio.from_url", return_value=mock_redis):
+        bus = RedisBus("redis://localhost:6379/0")
+        await bus.connect()
+        await bus.disconnect()
+        mock_redis.aclose.assert_called_once()
+
+@pytest.mark.asyncio
+async def test_set_stores_json_value():
+    mock_redis = AsyncMock()
+    with patch("shared.bus.redis.asyncio.from_url", return_value=mock_redis):
+        bus = RedisBus("redis://localhost:6379/0")
+        await bus.connect()
+        await bus.set("portfolio.value", {"total": 10000}, ex=60)
+        mock_redis.set.assert_called_once_with("portfolio.value", '{"total": 10000}', ex=60)
+
+@pytest.mark.asyncio
+async def test_get_returns_parsed_value():
+    mock_redis = AsyncMock()
+    mock_redis.get = AsyncMock(return_value='{"total": 10000}')
+    with patch("shared.bus.redis.asyncio.from_url", return_value=mock_redis):
+        bus = RedisBus("redis://localhost:6379/0")
+        await bus.connect()
+        result = await bus.get("portfolio.value")
+        assert result == {"total": 10000}
+
+@pytest.mark.asyncio
+async def test_get_returns_none_for_missing_key():
+    mock_redis = AsyncMock()
+    mock_redis.get = AsyncMock(return_value=None)
+    with patch("shared.bus.redis.asyncio.from_url", return_value=mock_redis):
+        bus = RedisBus("redis://localhost:6379/0")
+        await bus.connect()
+        result = await bus.get("nonexistent")
+        assert result is None

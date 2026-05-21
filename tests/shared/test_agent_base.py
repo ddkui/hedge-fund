@@ -53,3 +53,43 @@ async def test_agent_run_calls_run_once_and_stops():
     agent.run_once = counting_run
     await agent.run()
     assert call_count == 2
+
+@pytest.mark.asyncio
+async def test_agent_run_publishes_degraded_on_exception():
+    mock_bus = AsyncMock()
+    mock_db = AsyncMock()
+    mock_router = AsyncMock()
+
+    agent = ConcreteAgent(
+        name="test_agent",
+        bus=mock_bus,
+        db=mock_db,
+        router=mock_router,
+        interval_seconds=0,
+    )
+
+    async def failing_run():
+        agent._running = False
+        raise RuntimeError("boom")
+
+    agent.run_once = failing_run
+    await agent.run()
+
+    calls = [str(c) for c in mock_bus.publish.call_args_list]
+    assert any("degraded" in c for c in calls)
+
+@pytest.mark.asyncio
+async def test_agent_stop_sets_running_false():
+    mock_bus = AsyncMock()
+    mock_db = AsyncMock()
+    mock_router = AsyncMock()
+
+    agent = ConcreteAgent(
+        name="test_agent",
+        bus=mock_bus,
+        db=mock_db,
+        router=mock_router,
+    )
+    assert agent._running is True
+    agent.stop()
+    assert agent._running is False
