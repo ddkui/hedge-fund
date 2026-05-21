@@ -15,7 +15,9 @@ ANALYSIS_PROMPT = """You are a senior equity analyst. Analyze this SEC filing ex
 }}
 
 Filing ({ticker} {form_type} for period {period}):
+<filing>
 {text}
+</filing>
 
 Return ONLY the JSON object, no other text."""
 
@@ -74,13 +76,18 @@ class FundamentalResearchAgent(AnalysisAgent):
         except json.JSONDecodeError:
             match = re.search(r'\{.*\}', raw, re.DOTALL)
             if not match:
+                self.logger.warning("filing_parse_failed", ticker=row["ticker"], raw=raw[:200])
                 return
             try:
                 analysis = json.loads(match.group())
             except json.JSONDecodeError:
+                self.logger.warning("filing_parse_failed", ticker=row["ticker"], raw=raw[:200])
                 return
 
-        quality = int(analysis.get("quality_score", 50))
+        try:
+            quality = int(analysis.get("quality_score", 50))
+        except (TypeError, ValueError):
+            quality = 50
         moat = analysis.get("moat", "moderate")
         thesis = analysis.get("thesis", "")
         risks = analysis.get("risks", "")
