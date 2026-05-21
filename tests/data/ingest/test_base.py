@@ -52,3 +52,24 @@ async def test_store_prices_empty_list_skips_db():
     agent = make_agent()
     await agent.store_prices([])
     agent.db.executemany.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_store_prices_with_missing_optional_fields():
+    agent = make_agent()
+    rows = [
+        {
+            "time": datetime(2024, 1, 1, 10, 0, tzinfo=timezone.utc),
+            "symbol": "BTC",
+            "asset_class": "crypto",
+            "close": 42000.0,
+        }
+    ]
+    await agent.store_prices(rows)
+    agent.db.executemany.assert_called_once()
+    record = agent.db.executemany.call_args[0][1][0]
+    assert record[3] is None   # open
+    assert record[4] is None   # high
+    assert record[5] is None   # low
+    assert record[7] is None   # volume
+    assert record[6] == 42000.0  # close is present
