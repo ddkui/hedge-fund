@@ -8,17 +8,18 @@ import sys
 import signal
 
 AGENTS: list[str] = [
+    # Phase 2: Data ingest
     "data/ingest/main.py",
-    # Uncomment as agents are built in Phase 4+:
-    # "agents/research/main.py",
-    # "agents/macro/main.py",
-    # "agents/sentiment/main.py",
-    # "agents/options/main.py",
-    # "agents/portfolio_researcher/main.py",
+    # Phase 3: AI analysis
+    "agents/technical/main.py",
+    "agents/sentiment/main.py",
+    "agents/macro/main.py",
+    "agents/research/main.py",
+    "agents/aggregator/main.py",
+    # Phase 4+:
     # "agents/quant/momentum/main.py",
     # "agents/quant/mean_reversion/main.py",
     # "agents/quant/ml_quant/main.py",
-    # "agents/quant/macro_quant/main.py",
     # "agents/quant/supervisor/main.py",
     # "agents/portfolio_mgr/main.py",
     # "agents/risk/main.py",
