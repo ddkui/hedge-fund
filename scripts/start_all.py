@@ -8,6 +8,7 @@ import sys
 import signal
 
 AGENTS: list[str] = [
+    "data/ingest/main.py",
     # Uncomment as agents are built in Phase 4+:
     # "agents/research/main.py",
     # "agents/macro/main.py",
