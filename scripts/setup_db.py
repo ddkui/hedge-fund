@@ -84,6 +84,41 @@ CREATE TABLE IF NOT EXISTS agent_health (
     metadata    JSONB
 );
 SELECT create_hypertable('agent_health', 'time', if_not_exists => TRUE);
+
+-- Unique constraint on prices for idempotent inserts
+DO $$ BEGIN
+    ALTER TABLE prices ADD CONSTRAINT prices_time_symbol_unique UNIQUE (time, symbol);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+CREATE TABLE IF NOT EXISTS macro_data (
+    time        TIMESTAMPTZ NOT NULL,
+    series_id   TEXT NOT NULL,
+    value       DOUBLE PRECISION NOT NULL,
+    source      TEXT NOT NULL DEFAULT 'FRED',
+    UNIQUE (time, series_id)
+);
+
+CREATE TABLE IF NOT EXISTS news_items (
+    id              SERIAL PRIMARY KEY,
+    time            TIMESTAMPTZ NOT NULL,
+    source          TEXT NOT NULL,
+    headline        TEXT NOT NULL,
+    url             TEXT NOT NULL DEFAULT '',
+    sentiment_score DOUBLE PRECISION,
+    UNIQUE (time, source, headline)
+);
+
+CREATE TABLE IF NOT EXISTS sec_filings (
+    id          SERIAL PRIMARY KEY,
+    time        TIMESTAMPTZ NOT NULL,
+    ticker      TEXT NOT NULL,
+    form_type   TEXT NOT NULL,
+    period      TEXT NOT NULL,
+    filing_url  TEXT NOT NULL,
+    summary     TEXT,
+    UNIQUE (ticker, form_type, period)
+);
 """
 
 async def main():

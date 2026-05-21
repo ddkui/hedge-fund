@@ -38,3 +38,16 @@ def test_settings_db_dsn():
     os.environ["DB_PASSWORD"] = "changeme"
     settings = Settings()
     assert "hedgefund" in settings.db_dsn
+
+def test_settings_stock_watchlist_default():
+    settings = Settings()
+    assert settings.stock_watchlist == "AAPL,MSFT,GOOGL,AMZN,TSLA,NVDA,SPY,QQQ"
+
+def test_settings_crypto_watchlist_default():
+    settings = Settings()
+    assert settings.crypto_watchlist == "BTCUSDT,ETHUSDT,SOLUSDT"
+
+def test_settings_reddit_defaults():
+    settings = Settings()
+    assert settings.reddit_client_id == ""
+    assert settings.reddit_client_secret == ""

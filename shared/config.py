@@ -37,6 +37,13 @@ class Settings(BaseSettings):
     fred_api_key: str = ""
     gmail_sender: str = ""
 
+    reddit_client_id: str = ""
+    reddit_client_secret: str = ""
+    reddit_user_agent: str = "hedgefund/1.0"
+
+    stock_watchlist: str = "AAPL,MSFT,GOOGL,AMZN,TSLA,NVDA,SPY,QQQ"
+    crypto_watchlist: str = "BTCUSDT,ETHUSDT,SOLUSDT"
+
     @computed_field
     @property
     def redis_url(self) -> str:
