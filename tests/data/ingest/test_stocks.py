@@ -1,6 +1,6 @@
 import pytest
 import pandas as pd
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 from datetime import datetime, timezone
 from data.ingest.stocks import StocksIngestAgent
 
