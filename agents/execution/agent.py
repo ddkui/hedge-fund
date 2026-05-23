@@ -111,7 +111,7 @@ class ExecutionAgent(BaseAgent):
                 "UPDATE positions SET exit_price = $1, exit_time = $2, status = $3 WHERE symbol = $4 AND status = 'open'",
                 fill_price, now, "closed", symbol,
             )
-            positions_value -= trade_value
+            positions_value = max(0.0, positions_value - trade_value)
             cash += trade_value
             open_positions = max(0, open_positions - 1)
         else:

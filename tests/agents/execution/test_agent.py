@@ -69,6 +69,7 @@ async def test_execution_skips_when_no_pending():
     mock_settings, agent = make_agent(paper=True)
     agent.db.fetch = AsyncMock(return_value=[])
     agent.db.fetchrow = AsyncMock(return_value=PORTFOLIO_ROW)
+    agent.db.execute = AsyncMock()
 
     with patch("agents.execution.agent.settings", mock_settings):
         await agent.run_once()
