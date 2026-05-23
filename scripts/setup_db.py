@@ -143,6 +143,14 @@ CREATE TABLE IF NOT EXISTS risk_events (
 CREATE INDEX IF NOT EXISTS idx_portfolio_state_time ON portfolio_state(time DESC);
 CREATE INDEX IF NOT EXISTS idx_risk_events_time ON risk_events(time DESC);
 CREATE INDEX IF NOT EXISTS idx_risk_events_agent_time ON risk_events(agent, time DESC);
+
+CREATE OR REPLACE FUNCTION now_or_backtest()
+RETURNS timestamptz AS $$
+  SELECT COALESCE(
+    NULLIF(current_setting('backtest.now', true), '')::timestamptz,
+    NOW()
+  )
+$$ LANGUAGE SQL STABLE;
 """
 
 async def main():
