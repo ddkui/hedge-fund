@@ -63,3 +63,23 @@ def test_settings_risk_max_positions_default():
 
 def test_settings_initial_capital_default():
     assert settings.initial_capital == 100_000.0
+
+
+def test_settings_risk_max_drawdown_pct_default():
+    assert settings.risk_max_drawdown_pct == 0.20
+
+
+def test_settings_risk_var_limit_pct_default():
+    assert settings.risk_var_limit_pct == 0.05
+
+
+def test_settings_risk_max_correlated_default():
+    assert settings.risk_max_correlated == 3
+
+
+def test_settings_alpaca_base_url_default():
+    assert settings.alpaca_base_url == "https://paper-api.alpaca.markets"
+
+
+def test_settings_binance_base_url_default():
+    assert settings.binance_base_url == "https://api.binance.com"

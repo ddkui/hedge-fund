@@ -138,6 +138,10 @@ CREATE TABLE IF NOT EXISTS risk_events (
     details      TEXT NOT NULL,
     action_taken TEXT NOT NULL
 );
+
+CREATE INDEX IF NOT EXISTS idx_portfolio_state_time ON portfolio_state(time DESC);
+CREATE INDEX IF NOT EXISTS idx_risk_events_time ON risk_events(time DESC);
+CREATE INDEX IF NOT EXISTS idx_risk_events_agent_time ON risk_events(agent, time DESC);
 """
 
 async def main():
