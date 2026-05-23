@@ -119,6 +119,25 @@ CREATE TABLE IF NOT EXISTS sec_filings (
     summary     TEXT,
     UNIQUE (ticker, form_type, period)
 );
+
+CREATE TABLE IF NOT EXISTS portfolio_state (
+    id             SERIAL PRIMARY KEY,
+    time           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    cash           DOUBLE PRECISION NOT NULL,
+    total_value    DOUBLE PRECISION NOT NULL,
+    peak_value     DOUBLE PRECISION NOT NULL,
+    open_positions INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS risk_events (
+    id           SERIAL PRIMARY KEY,
+    time         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    agent        TEXT NOT NULL,
+    symbol       TEXT,
+    limit_type   TEXT NOT NULL,
+    details      TEXT NOT NULL,
+    action_taken TEXT NOT NULL
+);
 """
 
 async def main():

@@ -1,6 +1,6 @@
 import os
 import pytest
-from shared.config import Settings
+from shared.config import Settings, settings
 
 def test_settings_load_model_tier():
     os.environ["MODEL_TIER"] = "1"
@@ -51,3 +51,15 @@ def test_settings_reddit_defaults():
     settings = Settings()
     assert settings.reddit_client_id == ""
     assert settings.reddit_client_secret == ""
+
+def test_settings_kelly_multiplier_default():
+    assert settings.kelly_multiplier == 0.25
+
+def test_settings_risk_max_position_pct_default():
+    assert settings.risk_max_position_pct == 0.10
+
+def test_settings_risk_max_positions_default():
+    assert settings.risk_max_positions == 10
+
+def test_settings_initial_capital_default():
+    assert settings.initial_capital == 100_000.0

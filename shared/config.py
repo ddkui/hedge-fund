@@ -44,6 +44,16 @@ class Settings(BaseSettings):
     stock_watchlist: str = "AAPL,MSFT,GOOGL,AMZN,TSLA,NVDA,SPY,QQQ"
     crypto_watchlist: str = "BTCUSDT,ETHUSDT,SOLUSDT"
 
+    kelly_multiplier: float = 0.25
+    risk_max_position_pct: float = 0.10
+    risk_max_positions: int = 10
+    risk_max_drawdown_pct: float = 0.20
+    risk_var_limit_pct: float = 0.05
+    risk_max_correlated: int = 3
+    initial_capital: float = 100_000.0
+    alpaca_base_url: str = "https://paper-api.alpaca.markets"
+    binance_base_url: str = "https://api.binance.com"
+
     @computed_field
     @property
     def redis_url(self) -> str:
