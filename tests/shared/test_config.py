@@ -83,3 +83,7 @@ def test_settings_alpaca_base_url_default():
 
 def test_settings_binance_base_url_default():
     assert settings.binance_base_url == "https://api.binance.com"
+
+
+def test_gmail_app_password_default():
+    assert settings.gmail_app_password == ""

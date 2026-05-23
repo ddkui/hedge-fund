@@ -34,24 +34,33 @@ class OpsAgent(BaseAgent):
         self.logger.info("ops_starting")
         check_task = asyncio.create_task(self._check_loop())
         subscribe_task = asyncio.create_task(self._subscribe_loop())
-        await asyncio.gather(check_task, subscribe_task)
+        try:
+            await asyncio.gather(check_task, subscribe_task)
+        except asyncio.CancelledError:
+            check_task.cancel()
+            subscribe_task.cancel()
+            await asyncio.gather(check_task, subscribe_task, return_exceptions=True)
+            raise
 
     async def _subscribe_loop(self):
-        async for msg in self.bus.subscribe("ops.heartbeat"):
-            agent_name = msg.get("agent")
-            if not agent_name:
-                continue
-            self._last_seen[agent_name] = datetime.now(timezone.utc)
-            status = msg.get("status", "healthy")
-            now = datetime.now(timezone.utc)
-            await self.db.execute(
-                """
-                INSERT INTO agent_health (time, agent, status, metadata)
-                VALUES ($1, $2, $3, $4)
-                ON CONFLICT (agent) DO UPDATE SET time=$1, status=$3, metadata=$4
-                """,
-                now, agent_name, status, '{}',
-            )
+        try:
+            async for msg in self.bus.subscribe("ops.heartbeat"):
+                agent_name = msg.get("agent")
+                if not agent_name:
+                    continue
+                self._last_seen[agent_name] = datetime.now(timezone.utc)
+                status = msg.get("status", "healthy")
+                now = datetime.now(timezone.utc)
+                await self.db.execute(
+                    """
+                    INSERT INTO agent_health (time, agent, status, metadata)
+                    VALUES ($1, $2, $3, $4)
+                    ON CONFLICT (agent) DO UPDATE SET time=$1, status=$3, metadata=$4
+                    """,
+                    now, agent_name, status, '{}',
+                )
+        except asyncio.CancelledError:
+            pass
 
     async def _check_loop(self):
         while self._running:
@@ -104,7 +113,7 @@ class OpsAgent(BaseAgent):
             msg["From"] = settings.gmail_sender
             msg["To"] = settings.gmail_sender
             with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
-                server.login(settings.gmail_sender, settings.gmail_sender)
+                server.login(settings.gmail_sender, settings.gmail_app_password)
                 server.send_message(msg)
         except Exception as exc:
             self.logger.error("email_failed", error=str(exc))

@@ -36,6 +36,7 @@ class Settings(BaseSettings):
     news_api_key: str = ""
     fred_api_key: str = ""
     gmail_sender: str = ""
+    gmail_app_password: str = ""
 
     reddit_client_id: str = ""
     reddit_client_secret: str = ""
