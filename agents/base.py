@@ -12,7 +12,7 @@ class AnalysisAgent(BaseAgent):
         symbol: str | None = None,
         metadata: dict | None = None,
     ):
-        now = datetime.now(timezone.utc)
+        now = self._now()
         await self.db.execute(
             """
             INSERT INTO signals (time, agent, symbol, signal_type, confidence, reasoning, metadata)

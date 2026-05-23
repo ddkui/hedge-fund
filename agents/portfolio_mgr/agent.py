@@ -181,7 +181,7 @@ class PortfolioManagerAgent(AnalysisAgent):
         )
 
     async def _write_trade(self, symbol: str, direction: str, quantity: float, price: float, reasoning: str, confidence: float):
-        now = datetime.now(timezone.utc)
+        now = self._now()
         await self.db.execute(
             """
             INSERT INTO trades (time, symbol, action, quantity, price, paper, confidence, pm_reasoning)
@@ -192,7 +192,7 @@ class PortfolioManagerAgent(AnalysisAgent):
         self.logger.info("trade_written", symbol=symbol, direction=direction, quantity=quantity)
 
     async def _log_risk_event(self, symbol: str, action_taken: str, reason: str):
-        now = datetime.now(timezone.utc)
+        now = self._now()
         limit_type = reason.split(":")[0].strip() if ":" in reason else "unknown"
         await self.db.execute(
             "INSERT INTO risk_events (time, agent, symbol, limit_type, details, action_taken) VALUES ($1,$2,$3,$4,$5,$6)",

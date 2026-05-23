@@ -1,5 +1,6 @@
 import asyncio
 from abc import ABC, abstractmethod
+from datetime import datetime, timezone
 from shared.bus import RedisBus
 from shared.db import Database
 from shared.model_router import ModelRouter
@@ -48,3 +49,6 @@ class BaseAgent(ABC):
 
     def stop(self):
         self._running = False
+
+    def _now(self) -> datetime:
+        return datetime.now(timezone.utc)

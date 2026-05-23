@@ -99,7 +99,7 @@ class ExecutionAgent(BaseAgent):
         peak_value: float,
         open_positions: int,
     ) -> tuple[float, float, float, int]:
-        now = datetime.now(timezone.utc)
+        now = self._now()
         symbol = trade["symbol"]
         quantity = float(trade["quantity"])
         action = trade["action"]
@@ -140,7 +140,7 @@ class ExecutionAgent(BaseAgent):
         return cash, positions_value, peak_value, open_positions
 
     async def _fail_trade(self, trade_id: int, error: str):
-        now = datetime.now(timezone.utc)
+        now = self._now()
         await self.db.execute("UPDATE trades SET status = $1 WHERE id = $2", "failed", trade_id)
         await self.db.execute(
             "INSERT INTO risk_events (time, agent, symbol, limit_type, details, action_taken) VALUES ($1,'execution',NULL,'broker_error',$2,'trade_failed')",

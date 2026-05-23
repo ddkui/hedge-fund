@@ -57,7 +57,7 @@ class RiskAgent(BaseAgent):
         if worst is None:
             return
 
-        now = datetime.now(timezone.utc)
+        now = self._now()
         await self.db.execute(
             """
             INSERT INTO trades (time, symbol, action, quantity, price, paper, pm_reasoning, confidence)
@@ -74,7 +74,7 @@ class RiskAgent(BaseAgent):
         self.logger.warning("force_close_issued", symbol=worst["symbol"], pnl=worst_pnl)
 
     async def _log_event(self, symbol, limit_type: str, details: str, action_taken: str):
-        now = datetime.now(timezone.utc)
+        now = self._now()
         await self.db.execute(
             "INSERT INTO risk_events (time, agent, symbol, limit_type, details, action_taken) VALUES ($1,$2,$3,$4,$5,$6)",
             now, self.name, symbol, limit_type, details, action_taken,
