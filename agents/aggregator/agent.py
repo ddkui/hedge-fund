@@ -37,7 +37,7 @@ class SignalAggregatorAgent(AnalysisAgent):
             """
             SELECT agent, symbol, signal_type, confidence, time
             FROM signals
-            WHERE time > NOW() - INTERVAL '6 hours'
+            WHERE time > now_or_backtest() - INTERVAL '6 hours'
               AND agent != 'aggregator'
             ORDER BY time DESC
             """

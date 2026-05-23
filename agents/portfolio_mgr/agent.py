@@ -23,14 +23,14 @@ class PortfolioManagerAgent(AnalysisAgent):
         agg_signals = await self.db.fetch(
             """
             SELECT agent, symbol, signal_type, confidence FROM signals
-            WHERE agent = 'aggregator' AND time > NOW() - INTERVAL '10 minutes'
+            WHERE agent = 'aggregator' AND time > now_or_backtest() - INTERVAL '10 minutes'
             ORDER BY time DESC
             """
         )
         quant_signals = await self.db.fetch(
             """
             SELECT agent, symbol, signal_type, confidence FROM signals
-            WHERE agent = 'quant_supervisor' AND time > NOW() - INTERVAL '10 minutes'
+            WHERE agent = 'quant_supervisor' AND time > now_or_backtest() - INTERVAL '10 minutes'
             ORDER BY time DESC
             """
         )
@@ -139,7 +139,7 @@ class PortfolioManagerAgent(AnalysisAgent):
             """
             SELECT agent, symbol, signal_type, confidence FROM signals
             WHERE symbol = $1 AND agent IN ('aggregator', 'quant_supervisor')
-              AND time > NOW() - INTERVAL '5 minutes'
+              AND time > now_or_backtest() - INTERVAL '5 minutes'
             ORDER BY time DESC
             """,
             symbol,

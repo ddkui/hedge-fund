@@ -26,7 +26,7 @@ class SentimentAgent(AnalysisAgent):
         rows = await self.db.fetch(
             """
             SELECT headline, source, time FROM news_items
-            WHERE time > NOW() - INTERVAL '24 hours'
+            WHERE time > now_or_backtest() - INTERVAL '24 hours'
             ORDER BY time DESC LIMIT 200
             """
         )

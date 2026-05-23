@@ -21,7 +21,7 @@ class QuantSupervisorAgent(AnalysisAgent):
             """
             SELECT agent, symbol, signal_type, confidence, time
             FROM signals
-            WHERE agent = ANY($1) AND time > NOW() - INTERVAL '10 minutes'
+            WHERE agent = ANY($1) AND time > now_or_backtest() - INTERVAL '10 minutes'
             ORDER BY time DESC
             """,
             QUANT_AGENTS,

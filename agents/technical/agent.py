@@ -16,7 +16,7 @@ class TechnicalAnalysisAgent(AnalysisAgent):
                 """
                 SELECT time, open, high, low, close, volume
                 FROM prices
-                WHERE symbol = $1 AND time > NOW() - INTERVAL '2 hours'
+                WHERE symbol = $1 AND time > now_or_backtest() - INTERVAL '2 hours'
                 ORDER BY time ASC
                 """,
                 symbol,

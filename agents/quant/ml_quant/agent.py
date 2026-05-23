@@ -34,7 +34,7 @@ class MLQuantAgent(AnalysisAgent):
         rows = await self.db.fetch(
             """
             SELECT time, open, high, low, close, volume FROM prices
-            WHERE symbol = $1 AND time > NOW() - INTERVAL '30 days'
+            WHERE symbol = $1 AND time > now_or_backtest() - INTERVAL '30 days'
             ORDER BY time ASC
             """,
             symbol,
@@ -78,7 +78,7 @@ class MLQuantAgent(AnalysisAgent):
         rows = await self.db.fetch(
             """
             SELECT time, open, high, low, close, volume FROM prices
-            WHERE symbol = $1 AND time > NOW() - INTERVAL '2 hours'
+            WHERE symbol = $1 AND time > now_or_backtest() - INTERVAL '2 hours'
             ORDER BY time ASC
             """,
             symbol,

@@ -64,7 +64,7 @@ class RiskChecker:
             rows = await db.fetch(
                 """
                 SELECT symbol, time, close FROM prices
-                WHERE symbol = ANY($1) AND time > NOW() - INTERVAL '30 days'
+                WHERE symbol = ANY($1) AND time > now_or_backtest() - INTERVAL '30 days'
                 ORDER BY symbol, time ASC
                 """,
                 open_symbols,
@@ -95,7 +95,7 @@ class RiskChecker:
         rows = await db.fetch(
             """
             SELECT symbol, time, close FROM prices
-            WHERE symbol = ANY($1) AND time > NOW() - INTERVAL '20 days'
+            WHERE symbol = ANY($1) AND time > now_or_backtest() - INTERVAL '20 days'
             ORDER BY symbol, time ASC
             """,
             all_symbols,

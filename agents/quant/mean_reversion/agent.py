@@ -16,7 +16,7 @@ class MeanReversionQuantAgent(AnalysisAgent):
             rows = await self.db.fetch(
                 """
                 SELECT time, close FROM prices
-                WHERE symbol = $1 AND time > NOW() - INTERVAL '2 hours'
+                WHERE symbol = $1 AND time > now_or_backtest() - INTERVAL '2 hours'
                 ORDER BY time ASC
                 """,
                 symbol,

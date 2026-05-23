@@ -12,7 +12,7 @@ class CIOAgent(AnalysisAgent):
             """
             SELECT agent, symbol, signal_type, confidence, reasoning, time
             FROM signals
-            WHERE time > NOW() - INTERVAL '24 hours'
+            WHERE time > now_or_backtest() - INTERVAL '24 hours'
             ORDER BY time DESC
             LIMIT 200
             """
@@ -44,7 +44,7 @@ class CIOAgent(AnalysisAgent):
             """
             SELECT symbol, action, quantity, price, pm_reasoning, time
             FROM trades
-            WHERE status = 'executed' AND time > NOW() - INTERVAL '7 days'
+            WHERE status = 'executed' AND time > now_or_backtest() - INTERVAL '7 days'
             ORDER BY time DESC
             LIMIT 50
             """
@@ -53,10 +53,10 @@ class CIOAgent(AnalysisAgent):
             "SELECT signal_type, confidence, time FROM signals WHERE agent = 'macro' ORDER BY time DESC LIMIT 1"
         )
         risk_events = await self.db.fetch(
-            "SELECT limit_type, details, action_taken, time FROM risk_events WHERE time > NOW() - INTERVAL '24 hours'"
+            "SELECT limit_type, details, action_taken, time FROM risk_events WHERE time > now_or_backtest() - INTERVAL '24 hours'"
         )
         cio_overrides = await self.db.fetch(
-            "SELECT symbol, reasoning, time FROM signals WHERE signal_type = 'cio_override' AND time > NOW() - INTERVAL '24 hours'"
+            "SELECT symbol, reasoning, time FROM signals WHERE signal_type = 'cio_override' AND time > now_or_backtest() - INTERVAL '24 hours'"
         )
 
         macro_regime = macro_signal[0]["signal_type"] if macro_signal else "unknown"
