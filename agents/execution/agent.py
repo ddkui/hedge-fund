@@ -15,8 +15,10 @@ class ExecutionAgent(BaseAgent):
         state = await self.db.fetchrow(
             "SELECT cash, total_value, peak_value, open_positions FROM portfolio_state ORDER BY time DESC LIMIT 1"
         )
-        cash = float(state["cash"]) if state else settings.initial_capital
-        total_value = float(state["total_value"]) if state else settings.initial_capital
+        state_cash = float(state["cash"]) if state else settings.initial_capital
+        state_total = float(state["total_value"]) if state else settings.initial_capital
+        cash = state_cash
+        positions_value = state_total - state_cash
         peak_value = float(state["peak_value"]) if state else settings.initial_capital
         open_positions = int(state["open_positions"]) if state else 0
 
@@ -24,8 +26,8 @@ class ExecutionAgent(BaseAgent):
             fill_price = await self._get_fill_price(trade)
             if fill_price is None:
                 continue
-            cash, total_value, peak_value, open_positions = await self._apply_fill(
-                trade, fill_price, cash, total_value, peak_value, open_positions
+            cash, positions_value, peak_value, open_positions = await self._apply_fill(
+                trade, fill_price, cash, positions_value, peak_value, open_positions
             )
 
     async def _get_fill_price(self, trade) -> float | None:
@@ -93,7 +95,7 @@ class ExecutionAgent(BaseAgent):
         trade,
         fill_price: float,
         cash: float,
-        total_value: float,
+        positions_value: float,
         peak_value: float,
         open_positions: int,
     ) -> tuple[float, float, float, int]:
@@ -102,36 +104,40 @@ class ExecutionAgent(BaseAgent):
         quantity = float(trade["quantity"])
         action = trade["action"]
         trade_value = quantity * fill_price
-
-        await self.db.execute(
-            "UPDATE trades SET status = $1, price = $2 WHERE id = $3",
-            "executed", fill_price, trade["id"],
-        )
+        asset_class = "crypto" if trade["symbol"].upper().endswith("USDT") else "equity"
 
         if action == "close":
             await self.db.execute(
                 "UPDATE positions SET exit_price = $1, exit_time = $2, status = $3 WHERE symbol = $4 AND status = 'open'",
                 fill_price, now, "closed", symbol,
             )
+            positions_value -= trade_value
             cash += trade_value
             open_positions = max(0, open_positions - 1)
         else:
             await self.db.execute(
                 "INSERT INTO positions (symbol, asset_class, direction, quantity, entry_price, entry_time) VALUES ($1, $2, $3, $4, $5, $6)",
-                symbol, "equity", action, quantity, fill_price, now,
+                symbol, asset_class, action, quantity, fill_price, now,
             )
+            positions_value += trade_value
             cash -= trade_value
             open_positions += 1
 
-        total_value = cash + (open_positions * fill_price * quantity)
+        total_value = cash + positions_value
         peak_value = max(peak_value, total_value)
 
         await self.db.execute(
             "INSERT INTO portfolio_state (time, cash, total_value, peak_value, open_positions) VALUES ($1, $2, $3, $4, $5)",
             now, cash, total_value, peak_value, open_positions,
         )
+
+        await self.db.execute(
+            "UPDATE trades SET status = $1, price = $2 WHERE id = $3",
+            "executed", fill_price, trade["id"],
+        )
+
         self.logger.info("trade_executed", symbol=symbol, action=action, fill_price=fill_price, quantity=quantity)
-        return cash, total_value, peak_value, open_positions
+        return cash, positions_value, peak_value, open_positions
 
     async def _fail_trade(self, trade_id: int, error: str):
         now = datetime.now(timezone.utc)

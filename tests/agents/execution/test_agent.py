@@ -17,21 +17,19 @@ def make_agent(paper=True):
     settings = MagicMock()
     settings.paper_trading = paper
     settings.initial_capital = 100_000.0
-    with patch("agents.execution.agent.settings", settings):
-        agent = ExecutionAgent(
-            name="execution",
-            bus=AsyncMock(),
-            db=AsyncMock(),
-            router=AsyncMock(),
-            interval_seconds=5,
-        )
-    agent._settings = settings
-    return agent
+    agent = ExecutionAgent(
+        name="execution",
+        bus=AsyncMock(),
+        db=AsyncMock(),
+        router=AsyncMock(),
+        interval_seconds=5,
+    )
+    return settings, agent
 
 
 @pytest.mark.asyncio
 async def test_execution_fills_paper_trade():
-    agent = make_agent(paper=True)
+    mock_settings, agent = make_agent(paper=True)
     agent.db.fetch = AsyncMock(side_effect=[
         [PENDING_TRADE],          # pending trades
         [PRICE_ROW],              # latest price
@@ -39,7 +37,8 @@ async def test_execution_fills_paper_trade():
     agent.db.fetchrow = AsyncMock(return_value=PORTFOLIO_ROW)
     agent.db.execute = AsyncMock()
 
-    await agent.run_once()
+    with patch("agents.execution.agent.settings", mock_settings):
+        await agent.run_once()
 
     update_calls = [c for c in agent.db.execute.call_args_list if "UPDATE trades" in str(c)]
     assert len(update_calls) == 1
@@ -50,7 +49,7 @@ async def test_execution_fills_paper_trade():
 
 @pytest.mark.asyncio
 async def test_execution_updates_portfolio_state_on_fill():
-    agent = make_agent(paper=True)
+    mock_settings, agent = make_agent(paper=True)
     agent.db.fetch = AsyncMock(side_effect=[
         [PENDING_TRADE],
         [PRICE_ROW],
@@ -58,7 +57,8 @@ async def test_execution_updates_portfolio_state_on_fill():
     agent.db.fetchrow = AsyncMock(return_value=PORTFOLIO_ROW)
     agent.db.execute = AsyncMock()
 
-    await agent.run_once()
+    with patch("agents.execution.agent.settings", mock_settings):
+        await agent.run_once()
 
     state_calls = [c for c in agent.db.execute.call_args_list if "INSERT INTO portfolio_state" in str(c)]
     assert len(state_calls) == 1
@@ -66,17 +66,18 @@ async def test_execution_updates_portfolio_state_on_fill():
 
 @pytest.mark.asyncio
 async def test_execution_skips_when_no_pending():
-    agent = make_agent(paper=True)
+    mock_settings, agent = make_agent(paper=True)
     agent.db.fetch = AsyncMock(return_value=[])
     agent.db.fetchrow = AsyncMock(return_value=PORTFOLIO_ROW)
 
-    await agent.run_once()
+    with patch("agents.execution.agent.settings", mock_settings):
+        await agent.run_once()
     agent.db.execute.assert_not_called()
 
 
 @pytest.mark.asyncio
 async def test_execution_closes_position_on_close_trade():
-    agent = make_agent(paper=True)
+    mock_settings, agent = make_agent(paper=True)
     close_trade = {**PENDING_TRADE, "action": "close"}
     agent.db.fetch = AsyncMock(side_effect=[
         [close_trade],
@@ -85,7 +86,8 @@ async def test_execution_closes_position_on_close_trade():
     agent.db.fetchrow = AsyncMock(return_value=PORTFOLIO_ROW)
     agent.db.execute = AsyncMock()
 
-    await agent.run_once()
+    with patch("agents.execution.agent.settings", mock_settings):
+        await agent.run_once()
 
     position_calls = [c for c in agent.db.execute.call_args_list if "UPDATE positions" in str(c)]
     assert len(position_calls) == 1
