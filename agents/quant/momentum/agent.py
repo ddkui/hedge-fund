@@ -25,8 +25,10 @@ class MomentumQuantAgent(AnalysisAgent):
                 continue
             await self._analyze(symbol, rows)
 
-    async def _analyze(self, symbol: str, rows: list):
+    async def _analyze(self, symbol: str, rows: list[dict]):
         closes = pd.Series([float(r["close"]) for r in rows])
+        if closes.isna().any():
+            return
 
         momenta = []
         for n in TIMEFRAMES:
@@ -47,7 +49,8 @@ class MomentumQuantAgent(AnalysisAgent):
             signal_type = "momentum_bearish"
             confidence = CONFIDENCE_MAP.get(bearish_count, 40.0)
         else:
-            return  # mixed momentum — no signal
+            self.logger.debug("momentum_mixed_signal", symbol=symbol, bullish=bullish_count, bearish=bearish_count)
+            return
 
         await self.store_signal(
             symbol=symbol,
