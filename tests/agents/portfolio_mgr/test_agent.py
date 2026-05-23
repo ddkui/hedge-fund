@@ -93,7 +93,7 @@ async def test_pm_applies_cio_low_conviction():
     trade_calls = [c for c in agent.db.execute.call_args_list if "INSERT INTO trades" in str(c)]
     assert len(trade_calls) == 1
     args = trade_calls[0][0]
-    confidence = args[7]   # confidence is 8th positional arg to db.execute (0-indexed: time, symbol, direction, quantity, paper, reasoning, confidence)
+    confidence = args[7]   # args: SQL, now, symbol, action, quantity, price, paper, confidence, pm_reasoning
     assert confidence < 76.0  # (0.6*80 + 0.4*70) * 0.5 = 76 * 0.5 = 38
 
 
@@ -109,9 +109,8 @@ async def test_pm_risk_rejection_writes_risk_event():
     agent.db.fetchrow = AsyncMock(return_value=PORTFOLIO_ROW)
     agent.bus.get = AsyncMock(return_value=None)
 
-    with patch("agents.portfolio_mgr.agent.RiskChecker") as MockChecker:
-        MockChecker.return_value.validate = AsyncMock(return_value=(False, "drawdown: 25% exceeds max 20%"))
-        await agent.run_once()
+    agent._checker.validate = AsyncMock(return_value=(False, "drawdown: 25% exceeds max 20%"))
+    await agent.run_once()
 
     risk_calls = [c for c in agent.db.execute.call_args_list if "INSERT INTO risk_events" in str(c)]
     assert len(risk_calls) == 1
@@ -126,7 +125,6 @@ async def test_pm_closes_on_neutral_signal():
         [neutral_signal],
         [],        # no quant signal
         [open_pos],
-        [PRICE_ROW],
     ])
     agent.db.fetchrow = AsyncMock(return_value=PORTFOLIO_ROW)
     agent.bus.get = AsyncMock(return_value=None)

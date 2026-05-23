@@ -16,9 +16,9 @@ def _direction(signal_type: str) -> str:
 class PortfolioManagerAgent(AnalysisAgent):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self._checker = RiskChecker(settings=settings)
 
     async def run_once(self):
-        checker = RiskChecker(settings=settings)
 
         agg_signals = await self.db.fetch(
             """
@@ -42,13 +42,13 @@ class PortfolioManagerAgent(AnalysisAgent):
         )
         portfolio_value = float(state["total_value"]) if state else settings.initial_capital
         peak_value = float(state["peak_value"]) if state else settings.initial_capital
-        open_count = int(state["open_positions"]) if state else 0
 
         open_positions = await self.db.fetch(
             "SELECT symbol, direction, quantity FROM positions WHERE status = 'open'"
         )
         open_by_symbol = {p["symbol"]: p for p in open_positions}
         open_symbols = list(open_by_symbol.keys())
+        open_count = len(open_by_symbol)
 
         seen_symbols: set[str] = set()
         for sig in agg_signals:
@@ -76,13 +76,13 @@ class PortfolioManagerAgent(AnalysisAgent):
                         continue
                     await self._store_cio_override(symbol, "PM overrides avoid_open: confidence > 85", combined_confidence)
                 elif action == "request_close":
-                    await self._handle_request_close(symbol, open_by_symbol, portfolio_value, peak_value, open_count, open_symbols)
+                    await self._handle_request_close(symbol, open_by_symbol, portfolio_value, peak_value)
                     continue
 
             existing = open_by_symbol.get(symbol)
 
             if agg_dir == "neutral" and existing:
-                await self._write_trade(symbol, "close", float(existing["quantity"]), 0.0, portfolio_value, "consensus_neutral: closing position", combined_confidence)
+                await self._write_trade(symbol, "close", float(existing["quantity"]), 0.0, "consensus_neutral: closing position", combined_confidence)
                 continue
 
             if agg_dir == "neutral":
@@ -113,7 +113,7 @@ class PortfolioManagerAgent(AnalysisAgent):
             if symbol.upper().endswith("USDT") and direction == "short":
                 continue
 
-            ok, reason = await checker.validate(
+            ok, reason = await self._checker.validate(
                 symbol=symbol,
                 direction=direction,
                 quantity=quantity,
@@ -130,9 +130,11 @@ class PortfolioManagerAgent(AnalysisAgent):
                 await self._log_risk_event(symbol, "trade_rejected", reason)
                 continue
 
-            await self._write_trade(symbol, direction, quantity, current_price, portfolio_value, f"agg_dir={agg_dir}, conf={combined_confidence:.1f}", combined_confidence)
+            await self._write_trade(symbol, direction, quantity, current_price, f"agg_dir={agg_dir}, conf={combined_confidence:.1f}", combined_confidence)
+            open_count += 1
+            open_symbols.append(symbol)
 
-    async def _handle_request_close(self, symbol: str, open_by_symbol: dict, portfolio_value: float, peak_value: float, open_count: int, open_symbols: list):
+    async def _handle_request_close(self, symbol: str, open_by_symbol: dict, portfolio_value: float, peak_value: float):
         fresh_signals = await self.db.fetch(
             """
             SELECT agent, symbol, signal_type, confidence FROM signals
@@ -145,7 +147,7 @@ class PortfolioManagerAgent(AnalysisAgent):
         if not fresh_signals:
             existing = open_by_symbol.get(symbol)
             if existing:
-                await self._write_trade(symbol, "close", float(existing["quantity"]), 0.0, portfolio_value, "CIO request confirmed: no fresh signals", 0.0)
+                await self._write_trade(symbol, "close", float(existing["quantity"]), 0.0, "CIO request confirmed: no fresh signals", 0.0)
             return
 
         agg = next((s for s in fresh_signals if s["agent"] == "aggregator"), None)
@@ -167,7 +169,7 @@ class PortfolioManagerAgent(AnalysisAgent):
             )
         else:
             if existing:
-                await self._write_trade(symbol, "close", float(existing["quantity"]), 0.0, portfolio_value, "CIO request confirmed", conf)
+                await self._write_trade(symbol, "close", float(existing["quantity"]), 0.0, "CIO request confirmed", conf)
 
     async def _store_cio_override(self, symbol: str, reasoning: str, confidence: float):
         await self.store_signal(
@@ -178,7 +180,7 @@ class PortfolioManagerAgent(AnalysisAgent):
             metadata={"cio_override": True},
         )
 
-    async def _write_trade(self, symbol: str, direction: str, quantity: float, price: float, portfolio_value: float, reasoning: str, confidence: float):
+    async def _write_trade(self, symbol: str, direction: str, quantity: float, price: float, reasoning: str, confidence: float):
         now = datetime.now(timezone.utc)
         await self.db.execute(
             """
