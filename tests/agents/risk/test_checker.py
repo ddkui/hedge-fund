@@ -124,12 +124,23 @@ async def test_checker_rejects_drawdown_breach():
 async def test_checker_rejects_correlated_positions():
     checker = make_checker(max_correlated=2)
     db = AsyncMock()
-    # Return price series for 2 existing symbols + proposed — all highly correlated
-    prices_up = [{"symbol": s, "close": float(100 + i)} for i in range(30) for s in ["MSFT", "GOOGL"]]
-    # proposed AAPL is also rising — all three corr > 0.7
-    db.fetch = AsyncMock(return_value=prices_up + [{"symbol": "AAPL", "close": float(100 + i)} for i in range(30)])
     bus = AsyncMock()
     bus.get = AsyncMock(return_value=None)
+
+    from datetime import datetime, timezone, timedelta
+    base_time = datetime(2024, 1, 1, tzinfo=timezone.utc)
+
+    # VaR call data (open_symbols only: MSFT, GOOGL — returns empty so VaR passes)
+    var_rows = []
+
+    # Correlation call data (all_symbols: MSFT, GOOGL, AAPL)
+    corr_rows = [
+        {"symbol": s, "time": base_time + timedelta(days=i), "close": float(100 + i)}
+        for i in range(30)
+        for s in ["MSFT", "GOOGL", "AAPL"]
+    ]
+
+    db.fetch = AsyncMock(side_effect=[var_rows, corr_rows])
 
     ok, reason = await checker.validate(
         symbol="AAPL",
@@ -145,3 +156,43 @@ async def test_checker_rejects_correlated_positions():
     )
     assert ok is False
     assert "correlation" in reason
+
+
+@pytest.mark.asyncio
+async def test_checker_rejects_var_breach():
+    checker = make_checker(var_limit_pct=0.02)  # 2% limit
+    db = AsyncMock()
+    bus = AsyncMock()
+    bus.get = AsyncMock(return_value=None)  # no cache
+
+    # Build a price series for one symbol with large drops (5th pct of daily returns << -2%)
+    # 30 rows: price drops by 3% on most days
+    import numpy as np
+    np.random.seed(99)
+    from datetime import datetime, timezone, timedelta
+    base_time = datetime(2024, 1, 1, tzinfo=timezone.utc)
+    prices = [100.0]
+    for i in range(29):
+        # Mostly flat but with large drops
+        prices.append(prices[-1] * (1 + np.random.choice([-0.04, -0.03, 0.01, 0.02], p=[0.4, 0.3, 0.2, 0.1])))
+
+    rows = [
+        {"symbol": "MSFT", "time": base_time + timedelta(days=i), "close": prices[i]}
+        for i in range(30)
+    ]
+    db.fetch = AsyncMock(return_value=rows)
+
+    ok, reason = await checker.validate(
+        symbol="AAPL",
+        direction="long",
+        quantity=1.0,
+        price=100.0,
+        portfolio_value=100_000.0,
+        peak_value=100_000.0,
+        open_position_count=1,
+        open_symbols=["MSFT"],
+        db=db,
+        bus=bus,
+    )
+    assert ok is False
+    assert "var" in reason

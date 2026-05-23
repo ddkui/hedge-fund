@@ -4,7 +4,7 @@ from typing import Any
 
 
 class RiskChecker:
-    """Synchronous pre-trade risk validation. Imported by PortfolioManagerAgent."""
+    """Async pre-trade risk validation. Imported by PortfolioManagerAgent."""
 
     def __init__(self, settings: Any):
         self.settings = settings
@@ -63,7 +63,7 @@ class RiskChecker:
         else:
             rows = await db.fetch(
                 """
-                SELECT symbol, close FROM prices
+                SELECT symbol, time, close FROM prices
                 WHERE symbol = ANY($1) AND time > NOW() - INTERVAL '30 days'
                 ORDER BY symbol, time ASC
                 """,
@@ -73,7 +73,7 @@ class RiskChecker:
                 return True, ""
 
             df = pd.DataFrame(rows)
-            pivot = df.pivot_table(index=df.groupby("symbol").cumcount(), columns="symbol", values="close")
+            pivot = df.pivot_table(index="time", columns="symbol", values="close", aggfunc="last")
             returns = pivot.pct_change().dropna()
             if returns.empty:
                 return True, ""
@@ -94,7 +94,7 @@ class RiskChecker:
         all_symbols = open_symbols + [symbol]
         rows = await db.fetch(
             """
-            SELECT symbol, close FROM prices
+            SELECT symbol, time, close FROM prices
             WHERE symbol = ANY($1) AND time > NOW() - INTERVAL '20 days'
             ORDER BY symbol, time ASC
             """,
@@ -104,7 +104,7 @@ class RiskChecker:
             return True, ""
 
         df = pd.DataFrame(rows)
-        pivot = df.pivot_table(index=df.groupby("symbol").cumcount(), columns="symbol", values="close")
+        pivot = df.pivot_table(index="time", columns="symbol", values="close", aggfunc="last")
         returns = pivot.pct_change().dropna()
 
         if symbol not in returns.columns:
