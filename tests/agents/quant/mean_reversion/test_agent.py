@@ -15,7 +15,7 @@ def make_agent():
     )
 
 
-def make_rows_zscore(n=50, target_zscore=2.5):
+def make_rows_zscore(target_zscore=2.5):
     """Last bar is target_zscore std devs above/below 20-bar rolling mean.
 
     Creates a trend first to push RSI to extreme values, then a spike to achieve
@@ -52,7 +52,7 @@ def make_rows_zscore(n=50, target_zscore=2.5):
 @pytest.mark.asyncio
 async def test_mean_reversion_bearish_on_high_zscore():
     agent = make_agent()
-    agent.db.fetch = AsyncMock(return_value=make_rows_zscore(50, target_zscore=2.5))
+    agent.db.fetch = AsyncMock(return_value=make_rows_zscore(target_zscore=2.5))
     await agent.run_once()
     agent.db.execute.assert_called_once()
     call = agent.db.execute.call_args
@@ -62,7 +62,7 @@ async def test_mean_reversion_bearish_on_high_zscore():
 @pytest.mark.asyncio
 async def test_mean_reversion_bullish_on_low_zscore():
     agent = make_agent()
-    agent.db.fetch = AsyncMock(return_value=make_rows_zscore(50, target_zscore=-2.5))
+    agent.db.fetch = AsyncMock(return_value=make_rows_zscore(target_zscore=-2.5))
     await agent.run_once()
     agent.db.execute.assert_called_once()
     call = agent.db.execute.call_args
@@ -72,7 +72,7 @@ async def test_mean_reversion_bullish_on_low_zscore():
 @pytest.mark.asyncio
 async def test_mean_reversion_skips_normal_zscore():
     agent = make_agent()
-    agent.db.fetch = AsyncMock(return_value=make_rows_zscore(50, target_zscore=0.5))
+    agent.db.fetch = AsyncMock(return_value=make_rows_zscore(target_zscore=0.5))
     await agent.run_once()
     agent.db.execute.assert_not_called()
 
