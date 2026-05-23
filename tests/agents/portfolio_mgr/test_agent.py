@@ -51,7 +51,7 @@ async def test_pm_opens_long_on_bullish_signal():
     assert len(trade_calls) == 1
     args = trade_calls[0][0]
     assert "long" in args
-    assert "pending" in args
+    assert True in args  # paper_trading flag is True in test settings
 
 
 @pytest.mark.asyncio

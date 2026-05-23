@@ -149,7 +149,10 @@ class PortfolioManagerAgent(AnalysisAgent):
             return
 
         agg = next((s for s in fresh_signals if s["agent"] == "aggregator"), None)
-        conf = float(agg["confidence"]) if agg else 0.0
+        quant = next((s for s in fresh_signals if s["agent"] == "quant_supervisor"), None)
+        agg_conf = float(agg["confidence"]) if agg else 0.0
+        quant_conf = float(quant["confidence"]) if quant else 0.0
+        conf = agg_conf * 0.60 + quant_conf * 0.40
         direction = _direction(agg["signal_type"]) if agg else "neutral"
 
         existing = open_by_symbol.get(symbol)
@@ -179,10 +182,10 @@ class PortfolioManagerAgent(AnalysisAgent):
         now = datetime.now(timezone.utc)
         await self.db.execute(
             """
-            INSERT INTO trades (time, symbol, direction, quantity, status, paper, confidence, pm_reasoning)
+            INSERT INTO trades (time, symbol, action, quantity, price, paper, confidence, pm_reasoning)
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
             """,
-            now, symbol, direction, quantity, "pending", settings.paper_trading, confidence, reasoning,
+            now, symbol, direction, quantity, price, settings.paper_trading, confidence, reasoning,
         )
         self.logger.info("trade_written", symbol=symbol, direction=direction, quantity=quantity)
 
