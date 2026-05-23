@@ -26,7 +26,7 @@ class MLQuantAgent(AnalysisAgent):
             await self._infer(symbol)
 
     async def _maybe_retrain(self, symbol: str):
-        now = datetime.now(timezone.utc)
+        now = self._now()
         last = self._last_trained.get(symbol)
         if last and now - last < RETRAIN_INTERVAL:
             return

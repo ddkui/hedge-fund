@@ -48,9 +48,9 @@ class OpsAgent(BaseAgent):
                 agent_name = msg.get("agent")
                 if not agent_name:
                     continue
-                self._last_seen[agent_name] = datetime.now(timezone.utc)
+                self._last_seen[agent_name] = self._now()
                 status = msg.get("status", "healthy")
-                now = datetime.now(timezone.utc)
+                now = self._now()
                 await self.db.execute(
                     "INSERT INTO agent_health (time, agent, status, metadata) VALUES ($1, $2, $3, $4)",
                     now, agent_name, status, '{}',
@@ -64,7 +64,7 @@ class OpsAgent(BaseAgent):
             await asyncio.sleep(self.interval_seconds)
 
     async def _check_agents(self):
-        now = datetime.now(timezone.utc)
+        now = self._now()
         for agent_name, interval in self._known_agents.items():
             last = self._last_seen.get(agent_name)
             if last is None:
@@ -78,7 +78,7 @@ class OpsAgent(BaseAgent):
                 await self._write_health(agent_name, "degraded", gap)
 
     async def _write_health(self, agent_name: str, status: str, gap_seconds: float):
-        now = datetime.now(timezone.utc)
+        now = self._now()
         await self.db.execute(
             "INSERT INTO agent_health (time, agent, status, metadata) VALUES ($1, $2, $3, $4)",
             now, agent_name, status, f'{{"gap_seconds": {gap_seconds:.0f}}}',
@@ -89,7 +89,7 @@ class OpsAgent(BaseAgent):
         if not settings.gmail_sender:
             return
         last_sent = self._email_sent_at.get(agent_name)
-        now = datetime.now(timezone.utc)
+        now = self._now()
         if last_sent and (now - last_sent).total_seconds() < 3600:
             return
 
