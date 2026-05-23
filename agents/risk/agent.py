@@ -41,7 +41,7 @@ class RiskAgent(BaseAgent):
 
     async def _force_close_largest_loser(self, positions: list, prices: dict):
         worst = None
-        worst_pnl = 0.0
+        worst_pnl = float("inf")
         for pos in positions:
             sym = pos["symbol"]
             price = prices.get(sym)
