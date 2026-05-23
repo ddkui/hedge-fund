@@ -52,11 +52,7 @@ class OpsAgent(BaseAgent):
                 status = msg.get("status", "healthy")
                 now = datetime.now(timezone.utc)
                 await self.db.execute(
-                    """
-                    INSERT INTO agent_health (time, agent, status, metadata)
-                    VALUES ($1, $2, $3, $4)
-                    ON CONFLICT (agent) DO UPDATE SET time=$1, status=$3, metadata=$4
-                    """,
+                    "INSERT INTO agent_health (time, agent, status, metadata) VALUES ($1, $2, $3, $4)",
                     now, agent_name, status, '{}',
                 )
         except asyncio.CancelledError:
@@ -84,11 +80,7 @@ class OpsAgent(BaseAgent):
     async def _write_health(self, agent_name: str, status: str, gap_seconds: float):
         now = datetime.now(timezone.utc)
         await self.db.execute(
-            """
-            INSERT INTO agent_health (time, agent, status, metadata)
-            VALUES ($1, $2, $3, $4)
-            ON CONFLICT (agent) DO UPDATE SET time=$1, status=$3, metadata=$4
-            """,
+            "INSERT INTO agent_health (time, agent, status, metadata) VALUES ($1, $2, $3, $4)",
             now, agent_name, status, f'{{"gap_seconds": {gap_seconds:.0f}}}',
         )
         self.logger.warning("agent_health_changed", agent=agent_name, status=status, gap=gap_seconds)

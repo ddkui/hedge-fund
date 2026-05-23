@@ -56,6 +56,7 @@ CREATE TABLE IF NOT EXISTS trades (
     quantity    DOUBLE PRECISION NOT NULL,
     price       DOUBLE PRECISION NOT NULL,
     paper       BOOLEAN NOT NULL DEFAULT TRUE,
+    status      TEXT NOT NULL DEFAULT 'pending',
     pm_reasoning TEXT,
     confidence  DOUBLE PRECISION
 );

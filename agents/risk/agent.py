@@ -60,12 +60,13 @@ class RiskAgent(BaseAgent):
         now = datetime.now(timezone.utc)
         await self.db.execute(
             """
-            INSERT INTO trades (time, symbol, direction, quantity, status, paper, pm_reasoning, confidence)
-            VALUES ($1, $2, 'close', $3, 'pending', $4, $5, $6)
+            INSERT INTO trades (time, symbol, action, quantity, price, paper, pm_reasoning, confidence)
+            VALUES ($1, $2, 'close', $3, $4, $5, $6, $7)
             """,
             now,
             worst["symbol"],
             float(worst["quantity"]),
+            0.0,
             True,
             "RiskAgent force-close: drawdown limit breached",
             0.0,
