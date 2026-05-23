@@ -16,11 +16,12 @@ AGENTS: list[str] = [
     "agents/macro/main.py",
     "agents/research/main.py",
     "agents/aggregator/main.py",
-    # Phase 4+:
-    # "agents/quant/momentum/main.py",
-    # "agents/quant/mean_reversion/main.py",
-    # "agents/quant/ml_quant/main.py",
-    # "agents/quant/supervisor/main.py",
+    # Phase 4a: Quant signal layer
+    "agents/quant/momentum/main.py",
+    "agents/quant/mean_reversion/main.py",
+    "agents/quant/ml_quant/main.py",
+    "agents/quant/supervisor/main.py",
+    # Phase 4b (coming):
     # "agents/portfolio_mgr/main.py",
     # "agents/risk/main.py",
     # "agents/execution/main.py",
