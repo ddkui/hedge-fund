@@ -21,12 +21,12 @@ AGENTS: list[str] = [
     "agents/quant/mean_reversion/main.py",
     "agents/quant/ml_quant/main.py",
     "agents/quant/supervisor/main.py",
-    # Phase 4b (coming):
-    # "agents/portfolio_mgr/main.py",
-    # "agents/risk/main.py",
-    # "agents/execution/main.py",
-    # "agents/cio/main.py",
-    # "agents/ops/main.py",
+    # Phase 4b: Portfolio execution layer
+    "agents/portfolio_mgr/main.py",
+    "agents/risk/main.py",
+    "agents/execution/main.py",
+    "agents/cio/main.py",
+    "agents/ops/main.py",
 ]
 
 processes: list[subprocess.Popen] = []
