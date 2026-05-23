@@ -44,11 +44,14 @@ class MLQuantAgent(AnalysisAgent):
             return
 
         loop = asyncio.get_running_loop()
-        await loop.run_in_executor(None, self._train, symbol, list(rows))
-        self._last_trained[symbol] = now
-        self.logger.info("ml_retrained", symbol=symbol, bars=len(rows))
+        trained = await loop.run_in_executor(None, self._train, symbol, list(rows))
+        if trained:
+            self._last_trained[symbol] = now
+            self.logger.info("ml_retrained", symbol=symbol, bars=len(rows))
+        else:
+            self.logger.warning("ml_train_skipped_insufficient_features", symbol=symbol)
 
-    def _train(self, symbol: str, rows: list):
+    def _train(self, symbol: str, rows: list) -> bool:
         df = pd.DataFrame(rows).set_index("time").sort_index()
         df = df.astype({"open": float, "high": float, "low": float, "close": float, "volume": float})
 
@@ -64,11 +67,12 @@ class MLQuantAgent(AnalysisAgent):
         y = y.iloc[:-1]
 
         if len(X) < 100:
-            return
+            return False
 
         model = MLEnsemble()
         model.fit(X.values, y.values)
         self._models[symbol] = model
+        return True
 
     async def _infer(self, symbol: str):
         rows = await self.db.fetch(
