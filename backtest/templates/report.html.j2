@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Backtest Report — Run {{ run_id }}</title>
+  <script src="https://cdn.plot.ly/plotly-2.32.0.min.js"></script>
+  <style>
+    body { font-family: Arial, sans-serif; max-width: 1200px; margin: 0 auto; padding: 20px; }
+    h1, h2 { color: #333; }
+    table { border-collapse: collapse; width: 100%; margin-bottom: 20px; }
+    th, td { border: 1px solid #ddd; padding: 8px 12px; text-align: right; }
+    th { background: #f5f5f5; font-weight: bold; text-align: left; }
+    td:first-child { text-align: left; }
+    .metric-value { font-weight: bold; }
+    .positive { color: #27ae60; }
+    .negative { color: #e74c3c; }
+    #equity-chart, #drawdown-chart { width: 100%; height: 400px; margin-bottom: 30px; }
+  </style>
+</head>
+<body>
+  <h1>Backtest Report</h1>
+  <p>Run ID: <strong>{{ run_id }}</strong></p>
+
+  <h2>Key Metrics</h2>
+  <table>
+    <tr><th>Metric</th><th>Value</th></tr>
+    <tr><td>Total Return</td><td class="metric-value {% if metrics.total_return_pct >= 0 %}positive{% else %}negative{% endif %}">{{ "%.2f"|format(metrics.total_return_pct) }}%</td></tr>
+    <tr><td>CAGR</td><td class="metric-value {% if metrics.cagr_pct >= 0 %}positive{% else %}negative{% endif %}">{{ "%.2f"|format(metrics.cagr_pct) }}%</td></tr>
+    <tr><td>Sharpe Ratio</td><td class="metric-value">{{ "%.3f"|format(metrics.sharpe_ratio) }}</td></tr>
+    <tr><td>Max Drawdown</td><td class="metric-value negative">{{ "%.2f"|format(metrics.max_drawdown_pct) }}%</td></tr>
+    <tr><td>Total Trades</td><td class="metric-value">{{ metrics.total_trades }}</td></tr>
+    <tr><td>Final Portfolio Value</td><td class="metric-value">${{ "{:,.2f}".format(metrics.final_value) }}</td></tr>
+  </table>
+
+  <h2>Equity Curve</h2>
+  <div id="equity-chart"></div>
+
+  <h2>Drawdown</h2>
+  <div id="drawdown-chart"></div>
+
+  <h2>Trade Log</h2>
+  <table>
+    <tr>
+      <th>Time</th><th>Symbol</th><th>Action</th>
+      <th>Quantity</th><th>Price</th><th>Confidence</th>
+    </tr>
+    {% for t in trades %}
+    <tr>
+      <td>{{ t.time }}</td>
+      <td>{{ t.symbol }}</td>
+      <td>{{ t.action }}</td>
+      <td>{{ "%.4f"|format(t.quantity|float) }}</td>
+      <td>${{ "%.2f"|format(t.price|float) }}</td>
+      <td>{{ "%.1f"|format(t.confidence|float) }}%</td>
+    </tr>
+    {% endfor %}
+  </table>
+
+  <script>
+    var times = {{ times | tojson }};
+    var equity = {{ equity | tojson }};
+    var drawdown = {{ drawdown | tojson }};
+
+    Plotly.newPlot('equity-chart', [{
+      x: times, y: equity, type: 'scatter', mode: 'lines',
+      name: 'Portfolio Value',
+      line: {color: '#2ecc71', width: 2}
+    }], {
+      title: 'Equity Curve',
+      xaxis: {title: 'Date'},
+      yaxis: {title: 'Portfolio Value ($)', tickformat: '$,.0f'},
+      margin: {t: 40}
+    });
+
+    Plotly.newPlot('drawdown-chart', [{
+      x: times, y: drawdown, type: 'scatter', mode: 'lines',
+      name: 'Drawdown %',
+      fill: 'tozeroy',
+      line: {color: '#e74c3c', width: 2}
+    }], {
+      title: 'Drawdown',
+      xaxis: {title: 'Date'},
+      yaxis: {title: 'Drawdown (%)', tickformat: '.1f'},
+      margin: {t: 40}
+    });
+  </script>
+</body>
+</html>
