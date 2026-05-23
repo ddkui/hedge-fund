@@ -1,7 +1,7 @@
 import pandas as pd
 from agents.base import AnalysisAgent
 
-MIN_BARS = 60
+MIN_BARS = 62
 TIMEFRAMES = [5, 20, 60]
 CONFIDENCE_MAP = {3: 85.0, 2: 65.0, 1: 40.0}
 
