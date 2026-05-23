@@ -1,6 +1,5 @@
 import json
 import re
-from datetime import datetime, timezone
 from agents.base import AnalysisAgent
 from shared.config import settings
 
@@ -9,8 +8,6 @@ DIRECTIVE_TTL_SECONDS = 25 * 3600  # 25 hours
 
 class CIOAgent(AnalysisAgent):
     async def run_once(self):
-        now = datetime.now(timezone.utc)
-
         all_signals = await self.db.fetch(
             """
             SELECT agent, symbol, signal_type, confidence, reasoning, time
@@ -32,7 +29,8 @@ class CIOAgent(AnalysisAgent):
         positions_with_pnl = []
         for pos in open_positions:
             price = prices.get(pos["symbol"], float(pos["entry_price"]))
-            pnl = (price - float(pos["entry_price"])) * float(pos["quantity"])
+            direction_multiplier = -1.0 if pos["direction"] == "short" else 1.0
+            pnl = (price - float(pos["entry_price"])) * float(pos["quantity"]) * direction_multiplier
             positions_with_pnl.append({
                 "symbol": pos["symbol"],
                 "direction": pos["direction"],
@@ -142,7 +140,10 @@ Return ONLY the JSON array, nothing else."""
     def _parse_directives(self, raw: str) -> list[dict]:
         try:
             cleaned = re.sub(r"```(?:json)?|```", "", raw).strip()
-            return json.loads(cleaned)
+            result = json.loads(cleaned)
+            if not isinstance(result, list):
+                raise ValueError("Expected JSON array")
+            return result
         except (json.JSONDecodeError, ValueError):
             self.logger.warning("cio_parse_failed", raw=raw[:200])
             return []
