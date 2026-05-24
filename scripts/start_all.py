@@ -28,6 +28,7 @@ AGENTS: list[str] = [
     "agents/execution/main.py",
     "agents/cio/main.py",
     "agents/ops/main.py",
+    "agents/ops/notifications.py",
 ]
 
 processes: list[subprocess.Popen] = []
