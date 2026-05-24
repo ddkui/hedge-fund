@@ -10,3 +10,9 @@ build/
 venv/
 *.log
 memory/chroma/
+memory/obsidian/
+dashboard/.next/
+dashboard/node_modules/
+dashboard/tsconfig.tsbuildinfo
+dashboard/next-env.d.ts
+models/weights/*.pkl
