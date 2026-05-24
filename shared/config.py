@@ -55,6 +55,9 @@ class Settings(BaseSettings):
     alpaca_base_url: str = "https://paper-api.alpaca.markets"
     binance_base_url: str = "https://api.binance.com"
 
+    gateway_port: int = 8000
+    jwt_secret: str = "dev-secret-change-in-production"
+
     @computed_field
     @property
     def redis_url(self) -> str:
