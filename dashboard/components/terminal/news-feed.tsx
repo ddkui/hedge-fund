@@ -14,6 +14,23 @@ export function NewsFeed() {
   const { messages } = useWebSocket();
   const [news, setNews] = useState<NewsItem[]>([]);
 
+  // Seed from DB on mount
+  useEffect(() => {
+    fetch("/api/signals?limit=20")
+      .then((r) => r.json())
+      .then((sigs) => {
+        const newsSignals = sigs.filter((s: { agent: string }) => s.agent === "news_ingest");
+        setNews(newsSignals.map((s: { reasoning: string; agent: string; time: string; confidence: number }) => ({
+          headline: s.reasoning ?? "No headline",
+          source: s.agent,
+          time: s.time,
+          sentiment_score: s.confidence,
+        })));
+      })
+      .catch(console.error);
+  }, []);
+
+  // Live updates from WebSocket
   useEffect(() => {
     const newsMsg = messages.find((m) => m.channel === "data.news");
     if (newsMsg?.data) {
