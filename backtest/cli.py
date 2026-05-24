@@ -93,39 +93,46 @@ async def _main(argv=None):
     db = BacktestDB(dsn=settings.db_dsn, run_id=run_id)
     bus = InMemoryBus()
 
-    await db.connect()
-    await db.create_schema()
+    final_status = "failed"
+    metrics = None
+    try:
+        await db.connect()
+        await db.create_schema()
 
-    runner = BacktestRunner(
-        run_id=run_id, clock=clock, db=db, bus=bus, agent_names=args.agents
-    )
+        runner = BacktestRunner(
+            run_id=run_id, clock=clock, db=db, bus=bus, agent_names=args.agents
+        )
 
-    print("Running simulation...")
-    await runner.run()
+        print("Running simulation...")
+        await runner.run()
 
-    print("Generating report...")
-    gen = ReportGenerator(db=db, run_id=run_id)
-    metrics = await gen.generate(args.output)
+        print("Generating report...")
+        gen = ReportGenerator(db=db, run_id=run_id)
+        metrics = await gen.generate(args.output)
+        final_status = "done"
+    finally:
+        if not args.keep_schema:
+            try:
+                await db.drop_schema()
+            except Exception:
+                pass
+        await db.disconnect()
 
-    if not args.keep_schema:
-        await db.drop_schema()
-    await db.disconnect()
+        status_conn = await asyncpg.connect(settings.db_dsn)
+        await status_conn.execute(
+            "UPDATE backtest_runs SET status = $1 WHERE id = $2", final_status, run_id
+        )
+        await status_conn.close()
 
-    # Mark run as done
-    conn = await asyncpg.connect(settings.db_dsn)
-    await conn.execute(
-        "UPDATE backtest_runs SET status = $1 WHERE id = $2", "done", run_id
-    )
-    await conn.close()
-
-    print("\n=== Results ===")
-    print(f"  Total Return:  {metrics['total_return_pct']:.2f}%")
-    print(f"  CAGR:          {metrics['cagr_pct']:.2f}%")
-    print(f"  Sharpe Ratio:  {metrics['sharpe_ratio']:.3f}")
-    print(f"  Max Drawdown:  {metrics['max_drawdown_pct']:.2f}%")
-    print(f"  Total Trades:  {metrics['total_trades']}")
-    print(f"  Final Value:   ${metrics['final_value']:,.2f}")
-    print(f"\nReport saved to: {args.output}")
+    if metrics:
+        print("\n=== Results ===")
+        print(f"  Total Return:  {metrics['total_return_pct']:.2f}%")
+        print(f"  CAGR:          {metrics['cagr_pct']:.2f}%")
+        print(f"  Sharpe Ratio:  {metrics['sharpe_ratio']:.3f}")
+        print(f"  Max Drawdown:  {metrics['max_drawdown_pct']:.2f}%")
+        print(f"  Total Trades:  {metrics['total_trades']}")
+        print(f"  Final Value:   ${metrics['final_value']:,.2f}")
+        print(f"\nReport saved to: {args.output}")
 
 
 if __name__ == "__main__":

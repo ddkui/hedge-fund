@@ -58,6 +58,14 @@ CREATE TABLE IF NOT EXISTS risk_events (
     details      TEXT NOT NULL,
     action_taken TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS agent_health (
+    time     TIMESTAMPTZ NOT NULL,
+    agent    TEXT NOT NULL,
+    status   TEXT NOT NULL,
+    message  TEXT,
+    metadata JSONB
+);
 """
 
 
@@ -95,7 +103,8 @@ class BacktestDB:
     async def set_tick(self, dt: datetime):
         self.current_tick = dt
         await self._conn.execute(
-            f"SET backtest.now = '{dt.isoformat()}'"
+            "SELECT set_config('backtest.now', $1, false)",
+            dt.isoformat(),
         )
 
     async def fetch(self, query: str, *args) -> list[dict]:

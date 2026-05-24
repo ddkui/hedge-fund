@@ -48,6 +48,7 @@ async def test_set_tick_executes_session_variable():
 
     all_sql = " ".join(str(c) for c in mock_conn.execute.call_args_list)
     assert "backtest.now" in all_sql
+    assert dt.isoformat() in all_sql
 
 
 async def test_fetch_delegates_to_connection():
@@ -85,5 +86,5 @@ async def test_create_schema_creates_tables():
     await db.create_schema()
 
     all_sql = " ".join(str(c) for c in mock_conn.execute.call_args_list)
-    for table in ("signals", "trades", "positions", "portfolio_state", "risk_events"):
+    for table in ("signals", "trades", "positions", "portfolio_state", "risk_events", "agent_health"):
         assert table in all_sql, f"Expected {table} in schema DDL"
