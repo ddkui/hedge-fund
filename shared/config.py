@@ -57,6 +57,7 @@ class Settings(BaseSettings):
 
     gateway_port: int = 8000
     jwt_secret: str = "dev-secret-change-in-production"
+    dashboard_password: str = "hedgefund2026"
 
     @computed_field
     @property

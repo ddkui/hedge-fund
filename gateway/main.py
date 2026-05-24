@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from gateway import deps
-from gateway.routers import portfolio, signals, agents, backtests, trades, chat, prices
+from gateway.routers import portfolio, signals, agents, backtests, trades, chat, prices, auth as auth_router
 from gateway.ws_manager import router as ws_router
 
 
@@ -26,6 +26,7 @@ app.add_middleware(
 )
 
 
+app.include_router(auth_router.router, prefix="/auth", tags=["auth"])
 app.include_router(portfolio.router, prefix="/portfolio", tags=["portfolio"])
 app.include_router(signals.router, prefix="/signals", tags=["signals"])
 app.include_router(agents.router, prefix="/agents", tags=["agents"])
