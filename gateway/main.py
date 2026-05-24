@@ -41,8 +41,8 @@ async def security_headers(request: Request, call_next) -> Response:
     response.headers["X-XSS-Protection"] = "1; mode=block"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
     response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
-    # Only add HSTS when running behind TLS
-    # response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    # HSTS — safe because traffic always arrives via Caddy (TLS termination)
+    response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
     return response
 
 

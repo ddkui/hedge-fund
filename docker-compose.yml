@@ -1,23 +1,118 @@
 version: "3.9"
+
+# ─────────────────────────────────────────────
+# Usage
+#   Development (HTTP only, no Caddy):
+#     docker compose up redis timescaledb gateway agents
+#
+#   Production (HTTPS via Caddy):
+#     DOMAIN=hedgefund.example.com docker compose up
+#
+#   Local HTTPS (self-signed cert):
+#     DOMAIN=localhost docker compose up
+# ─────────────────────────────────────────────
+
 services:
+
+  # ── Infrastructure ──────────────────────────
   redis:
     image: redis:7-alpine
-    ports:
-      - "6379:6379"
+    restart: unless-stopped
     volumes:
       - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
 
   timescaledb:
     image: timescale/timescaledb:latest-pg16
+    restart: unless-stopped
     environment:
       POSTGRES_DB: ${DB_NAME:-hedgefund}
       POSTGRES_USER: ${DB_USER:-hedgefund}
       POSTGRES_PASSWORD: ${DB_PASSWORD:-changeme}
-    ports:
-      - "5432:5432"
     volumes:
       - tsdb_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-hedgefund}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Application ─────────────────────────────
+  gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      REDIS_HOST: redis
+      DB_HOST: timescaledb
+    depends_on:
+      redis:
+        condition: service_healthy
+      timescaledb:
+        condition: service_healthy
+    # Exposed directly only in dev; in prod traffic comes via Caddy
+    ports:
+      - "${GATEWAY_PORT:-8000}:8000"
+    volumes:
+      - ./memory:/app/memory   # shared Obsidian vault
+
+  agents:
+    build:
+      context: .
+      dockerfile: Dockerfile.agents
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      REDIS_HOST: redis
+      DB_HOST: timescaledb
+    depends_on:
+      redis:
+        condition: service_healthy
+      timescaledb:
+        condition: service_healthy
+      gateway:
+        condition: service_healthy
+    volumes:
+      - ./memory:/app/memory   # shared Obsidian vault
+
+  dashboard:
+    build:
+      context: ./dashboard
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      NEXT_PUBLIC_API_URL: ""   # Caddy handles routing; relative URLs work
+    depends_on:
+      - gateway
+
+  # ── Reverse proxy (production) ───────────────
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"   # HTTP/3
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    environment:
+      DOMAIN: ${DOMAIN:-localhost}
+    depends_on:
+      - gateway
+      - dashboard
+    profiles:
+      - production   # only starts with: docker compose --profile production up
 
 volumes:
   redis_data:
   tsdb_data:
+  caddy_data:
+  caddy_config:

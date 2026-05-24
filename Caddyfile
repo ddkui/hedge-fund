@@ -1,0 +1,40 @@
+# Caddyfile — reverse proxy with automatic TLS
+#
+# PRODUCTION: set DOMAIN in your environment or replace {$DOMAIN} with your hostname.
+#   e.g. DOMAIN=hedgefund.example.com docker compose up
+#
+# LOCAL / no domain: replace {$DOMAIN} with ":443" and Caddy will use a
+#   self-signed cert (browser will warn; import caddy's root CA to silence it).
+#   Run: caddy trust  (once, adds Caddy's CA to system store)
+
+{$DOMAIN} {
+    # Proxy all API + WebSocket traffic to the gateway
+    reverse_proxy /api/* gateway:8000
+    reverse_proxy /auth/* gateway:8000
+    reverse_proxy /portfolio/* gateway:8000
+    reverse_proxy /signals/* gateway:8000
+    reverse_proxy /agents/* gateway:8000
+    reverse_proxy /backtests/* gateway:8000
+    reverse_proxy /trades/* gateway:8000
+    reverse_proxy /chat/* gateway:8000
+    reverse_proxy /prices/* gateway:8000
+    reverse_proxy /health gateway:8000
+
+    # WebSocket endpoint
+    reverse_proxy /ws/* gateway:8000
+
+    # Next.js dashboard — everything else
+    reverse_proxy dashboard:3000
+
+    # Security — Caddy already sets HSTS when TLS is active; add extras
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+        X-Content-Type-Options nosniff
+        X-Frame-Options DENY
+        Referrer-Policy strict-origin-when-cross-origin
+        -Server
+    }
+
+    # Encode responses
+    encode gzip
+}
