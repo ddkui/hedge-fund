@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from gateway import deps
-from gateway.routers import portfolio, signals, agents, backtests, trades, chat
+from gateway.routers import portfolio, signals, agents, backtests, trades, chat, prices
 from gateway.ws_manager import router as ws_router
 
 
@@ -32,6 +32,7 @@ app.include_router(agents.router, prefix="/agents", tags=["agents"])
 app.include_router(backtests.router, prefix="/backtests", tags=["backtests"])
 app.include_router(trades.router, prefix="/trades", tags=["trades"])
 app.include_router(chat.router, prefix="/chat", tags=["chat"])
+app.include_router(prices.router, prefix="/prices", tags=["prices"])
 app.include_router(ws_router)
 
 
