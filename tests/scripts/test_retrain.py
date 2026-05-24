@@ -9,7 +9,7 @@ async def test_retrain_fetches_prices_from_db():
         mock_db = AsyncMock()
         mock_db.fetch = AsyncMock(return_value=[
             {"symbol": "AAPL", "close": 180.0, "time": "2026-05-01T10:00:00+00:00"},
-        ] * 100)
+        ] * 201)
         MockDB.return_value = mock_db
         mock_db.connect = AsyncMock()
         mock_db.disconnect = AsyncMock()

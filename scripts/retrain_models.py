@@ -16,7 +16,7 @@ import numpy as np
 from shared.db import Database
 from shared.config import settings
 
-MIN_ROWS = 50  # minimum price rows needed to retrain
+MIN_ROWS = 200  # minimum price rows needed to retrain
 MODEL_DIR = Path("models/weights")
 MODEL_DIR.mkdir(parents=True, exist_ok=True)
 
