@@ -1,7 +1,7 @@
 // dashboard/components/terminal/price-chart.tsx
 "use client";
 import { useEffect, useRef, useState } from "react";
-import { createChart, CandlestickSeries } from "lightweight-charts";
+import { createChart } from "lightweight-charts";
 import type { IChartApi, ISeriesApi } from "lightweight-charts";
 
 const WATCHLIST = ["AAPL", "MSFT", "NVDA", "BTCUSDT", "ETHUSDT", "SPY"];
@@ -20,7 +20,7 @@ export function PriceChart() {
       width: chartRef.current.clientWidth,
       height: 400,
     });
-    const series = chart.addSeries(CandlestickSeries, {
+    const series = chart.addCandlestickSeries({
       upColor: "#00d4aa",
       downColor: "#ff4757",
       borderVisible: false,
