@@ -29,3 +29,10 @@ async def test_get_algo_by_id(client, mock_db):
     resp = await client.get("/backtests/algos/1")
     assert resp.status_code == 200
     assert resp.json()["id"] == 1
+
+
+@pytest.mark.asyncio
+async def test_get_algo_not_found_returns_404(client, mock_db):
+    mock_db.fetchrow.return_value = None
+    resp = await client.get("/backtests/algos/999")
+    assert resp.status_code == 404
