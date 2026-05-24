@@ -1,7 +1,9 @@
 import json
 import re
 import httpx
+from datetime import datetime, timezone
 from agents.base import AnalysisAgent
+from shared.memory import MemoryMixin
 
 SEC_HEADERS = {"User-Agent": "hedgefund info@hedgefund.local"}
 MAX_TEXT_CHARS = 8000
@@ -22,7 +24,7 @@ Filing ({ticker} {form_type} for period {period}):
 Return ONLY the JSON object, no other text."""
 
 
-class FundamentalResearchAgent(AnalysisAgent):
+class FundamentalResearchAgent(MemoryMixin, AnalysisAgent):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._processed: set[str] = set()
@@ -94,11 +96,23 @@ class FundamentalResearchAgent(AnalysisAgent):
 
         signal_type = "fundamental_bullish" if quality >= 70 else ("fundamental_bearish" if quality < 40 else "fundamental_neutral")
 
+        reasoning = f"{form_type} {period}: {thesis} Risks: {risks}"
         await self.store_signal(
             symbol=ticker,
             signal_type=signal_type,
             confidence=float(quality),
-            reasoning=f"{form_type} {period}: {thesis} Risks: {risks}",
+            reasoning=reasoning,
             metadata={"quality_score": quality, "moat": moat, "form_type": form_type, "period": period},
+        )
+        now = datetime.now(timezone.utc)
+        await self.write_to_obsidian(
+            title=f"Research: {ticker}",
+            body=reasoning,
+            tags=["research", ticker.lower()],
+        )
+        await self.write_to_chroma(
+            doc_id=f"research-{ticker}-{now.isoformat()}",
+            text=reasoning,
+            metadata={"symbol": ticker, "agent": "research", "signal_type": signal_type},
         )
         self.logger.info("fundamental_signal", ticker=ticker, quality=quality, moat=moat)

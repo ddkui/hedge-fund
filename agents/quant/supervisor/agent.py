@@ -1,5 +1,7 @@
 from collections import defaultdict
+from datetime import datetime, timezone
 from agents.base import AnalysisAgent
+from shared.memory import MemoryMixin
 
 QUANT_AGENTS = ["momentum", "mean_reversion", "ml_quant"]
 BULLISH_KEYWORDS = {"bullish"}
@@ -15,7 +17,7 @@ def _direction(signal_type: str) -> float:
     return 0.0
 
 
-class QuantSupervisorAgent(AnalysisAgent):
+class QuantSupervisorAgent(MemoryMixin, AnalysisAgent):
     async def run_once(self):
         signals = await self.db.fetch(
             """
@@ -71,15 +73,27 @@ class QuantSupervisorAgent(AnalysisAgent):
 
             confidence = min(100.0, abs(normalized) * 100 * (1 + len(sigs) / 5))
 
+            quant_reasoning = f"quant_weighted_score={normalized:.3f}, signals_used={len(sigs)}"
             await self.store_signal(
                 symbol=symbol,
                 signal_type=signal_type,
                 confidence=confidence,
-                reasoning=f"quant_weighted_score={normalized:.3f}, signals_used={len(sigs)}",
+                reasoning=quant_reasoning,
                 metadata={
                     "weighted_score": round(normalized, 4),
                     "signal_count": len(sigs),
                     "agents": [s["agent"] for s in sigs],
                 },
+            )
+            now = datetime.now(timezone.utc)
+            await self.write_to_obsidian(
+                title=f"Quant Decision: {symbol} {signal_type}",
+                body=f"**Decision:** {signal_type}\n**Reason:** {quant_reasoning}\n**Confidence:** {confidence:.2f}",
+                tags=["quant", "supervisor", signal_type],
+            )
+            await self.write_to_chroma(
+                doc_id=f"quant-supervisor-{symbol}-{now.isoformat()}",
+                text=quant_reasoning,
+                metadata={"symbol": symbol, "agent": "quant_supervisor", "signal_type": signal_type},
             )
             self.logger.info("quant_consensus", symbol=symbol, signal=signal_type, score=normalized)

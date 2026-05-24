@@ -1,12 +1,14 @@
 import json
 import re
+from datetime import datetime, timezone
 from agents.base import AnalysisAgent
 from shared.config import settings
+from shared.memory import MemoryMixin
 
 DIRECTIVE_TTL_SECONDS = 25 * 3600  # 25 hours
 
 
-class CIOAgent(AnalysisAgent):
+class CIOAgent(MemoryMixin, AnalysisAgent):
     async def run_once(self):
         all_signals = await self.db.fetch(
             """
@@ -99,10 +101,11 @@ class CIOAgent(AnalysisAgent):
         if cio_overrides:
             pm_pushback_note = f" PM overrode {len(cio_overrides)} CIO directive(s)."
 
+        brief_reasoning = f"Regime={macro_regime}. {len(directives)} directives issued.{pm_pushback_note} Raw: {raw_response[:500]}"
         await self.store_signal(
             signal_type="daily_brief",
             confidence=100.0,
-            reasoning=f"Regime={macro_regime}. {len(directives)} directives issued.{pm_pushback_note} Raw: {raw_response[:500]}",
+            reasoning=brief_reasoning,
             metadata={
                 "positions": positions_with_pnl,
                 "directives": directives,
@@ -110,6 +113,12 @@ class CIOAgent(AnalysisAgent):
                 "risk_events_count": len(risk_events),
                 "cio_overrides_count": len(cio_overrides),
             },
+        )
+        now = datetime.now(timezone.utc)
+        await self.write_to_obsidian(
+            title=f"CIO Brief {now.strftime('%Y-%m-%d')}",
+            body=brief_reasoning,
+            tags=["cio", "brief"],
         )
 
     def _build_prompt(self, positions, closed_trades, macro_regime, risk_events, cio_overrides, recent_signals) -> str:
