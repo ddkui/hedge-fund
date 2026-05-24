@@ -6,6 +6,12 @@ from shared.config import settings
 
 class ExecutionAgent(BaseAgent):
     async def run_once(self):
+        # Kill switch check — halt all trading if activated
+        state = await self.bus.get("kill_switch_state")
+        if state and state.get("halted"):
+            self.logger.info("execution_halted_by_kill_switch")
+            return
+
         pending = await self.db.fetch(
             "SELECT id, symbol, action, quantity, paper FROM trades WHERE status = 'pending' ORDER BY time ASC"
         )

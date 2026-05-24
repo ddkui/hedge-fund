@@ -1,9 +1,16 @@
 // dashboard/components/layout/kill-switch.tsx
 "use client";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 export function KillSwitch() {
   const [active, setActive] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/chat/kill-switch/status")
+      .then(r => r.json())
+      .then(d => setActive(d.halted))
+      .catch(() => {});
+  }, []);
 
   async function toggle() {
     const endpoint = active ? "/api/chat/kill-switch/resume" : "/api/chat/kill-switch/halt";

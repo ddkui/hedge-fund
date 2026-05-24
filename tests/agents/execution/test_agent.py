@@ -17,9 +17,11 @@ def make_agent(paper=True):
     settings = MagicMock()
     settings.paper_trading = paper
     settings.initial_capital = 100_000.0
+    bus = AsyncMock()
+    bus.get = AsyncMock(return_value=None)  # kill switch not active by default
     agent = ExecutionAgent(
         name="execution",
-        bus=AsyncMock(),
+        bus=bus,
         db=AsyncMock(),
         router=AsyncMock(),
         interval_seconds=5,

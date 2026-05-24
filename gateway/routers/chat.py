@@ -13,6 +13,26 @@ class ChatMessage(BaseModel):
     message: str
 
 
+@router.post("/kill-switch/halt")
+async def halt_trading(bus: RedisBus = Depends(get_bus)):
+    await bus.publish("kill_switch", {"action": "halt", "halted": True})
+    await bus.set("kill_switch_state", {"halted": True})
+    return {"halted": True}
+
+
+@router.post("/kill-switch/resume")
+async def resume_trading(bus: RedisBus = Depends(get_bus)):
+    await bus.publish("kill_switch", {"action": "resume", "halted": False})
+    await bus.set("kill_switch_state", {"halted": False})
+    return {"halted": False}
+
+
+@router.get("/kill-switch/status")
+async def kill_switch_status(bus: RedisBus = Depends(get_bus)):
+    state = await bus.get("kill_switch_state")
+    return {"halted": state.get("halted", False) if state else False}
+
+
 @router.post("")
 async def chat(body: ChatMessage, bus: RedisBus = Depends(get_bus)):
     """Send message to CIO agent and wait up to 30s for response."""
