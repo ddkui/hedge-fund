@@ -1,7 +1,7 @@
 import pytest
 from datetime import datetime, timezone, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
-from agents.ops.agent import OpsAgent
+from agents.ops.agent import EngineerAgent
 
 KNOWN_AGENTS = {
     "technical": 120,
@@ -11,14 +11,17 @@ KNOWN_AGENTS = {
 
 
 def make_agent():
-    agent = OpsAgent(
-        name="ops",
-        bus=AsyncMock(),
-        db=AsyncMock(),
-        router=AsyncMock(),
-        interval_seconds=60,
-    )
-    agent._known_agents = KNOWN_AGENTS.copy()
+    agent = EngineerAgent.__new__(EngineerAgent)
+    agent.name = "ops"
+    agent.db = AsyncMock()
+    agent.bus = AsyncMock()
+    agent.bus.publish = AsyncMock()
+    agent.logger = MagicMock()
+    agent._running = True
+    agent._last_seen = {}
+    agent._restart_counts = {}
+    agent._email_sent_at = {}
+    agent.interval_seconds = 60
     return agent
 
 
@@ -52,14 +55,9 @@ async def test_ops_detects_down_agent():
     # technical has interval 120s; if last seen > 5*120 = 600s ago → down
     agent._last_seen["technical"] = datetime.now(timezone.utc) - timedelta(seconds=700)
 
-    with patch("agents.ops.agent.settings") as mock_settings, \
-         patch("agents.ops.agent.smtplib") as mock_smtp:
-        mock_settings.gmail_sender = "alerts@example.com"
-        mock_settings.gmail_app_password = "secret"
-        mock_smtp.SMTP_SSL.return_value.__enter__ = MagicMock(return_value=MagicMock())
-        mock_smtp.SMTP_SSL.return_value.__exit__ = MagicMock(return_value=False)
-        await agent._check_agents()
+    await agent._check_agents()
 
     down_calls = [c for c in agent.db.execute.call_args_list if "'down'" in str(c)]
     assert len(down_calls) >= 1
-    mock_smtp.SMTP_SSL.assert_called_once_with("smtp.gmail.com", 465)
+    # EngineerAgent publishes ops.alert on down (not email directly)
+    agent.bus.publish.assert_called()
