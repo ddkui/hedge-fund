@@ -24,7 +24,7 @@ _clients: list[WebSocket] = []
 
 async def _broadcast(message: dict):
     disconnected = []
-    for ws in _clients:
+    for ws in list(_clients):
         try:
             await ws.send_text(json.dumps(message))
         except Exception:
@@ -39,17 +39,21 @@ async def _redis_bridge():
     from shared.config import settings
     client = aioredis.from_url(settings.redis_url, decode_responses=True)
     pubsub = client.pubsub()
-    await pubsub.subscribe(*SUBSCRIBED_CHANNELS)
-    async for raw in pubsub.listen():
-        if raw["type"] == "message":
-            data = raw["data"]
-            if isinstance(data, bytes):
-                data = data.decode("utf-8")
-            try:
-                payload = json.loads(data)
-            except Exception:
-                payload = {"raw": data}
-            await _broadcast({"channel": raw["channel"], "data": payload})
+    try:
+        await pubsub.subscribe(*SUBSCRIBED_CHANNELS)
+        async for raw in pubsub.listen():
+            if raw["type"] == "message":
+                data = raw["data"]
+                if isinstance(data, bytes):
+                    data = data.decode("utf-8")
+                try:
+                    payload = json.loads(data)
+                except Exception:
+                    payload = {"raw": data}
+                await _broadcast({"channel": raw["channel"], "data": payload})
+    finally:
+        await pubsub.unsubscribe()
+        await client.aclose()
 
 
 _bridge_task: asyncio.Task | None = None

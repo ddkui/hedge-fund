@@ -20,7 +20,7 @@ async def approve_trade(trade_id: int, db: Database = Depends(get_db)):
     if not row:
         raise HTTPException(status_code=404, detail="Trade not found")
     await db.execute(
-        "UPDATE trades SET status = 'approved' WHERE id = $1", trade_id
+        "UPDATE trades SET status = 'approved' WHERE id = $1 AND status = 'pending'", trade_id
     )
     return {"id": trade_id, "status": "approved"}
 
@@ -31,6 +31,6 @@ async def deny_trade(trade_id: int, db: Database = Depends(get_db)):
     if not row:
         raise HTTPException(status_code=404, detail="Trade not found")
     await db.execute(
-        "UPDATE trades SET status = 'denied' WHERE id = $1", trade_id
+        "UPDATE trades SET status = 'denied' WHERE id = $1 AND status = 'pending'", trade_id
     )
     return {"id": trade_id, "status": "denied"}
