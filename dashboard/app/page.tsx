@@ -1,3 +1,5 @@
+// dashboard/app/page.tsx
+import { redirect } from "next/navigation";
 export default function Home() {
-  return <div>Loading...</div>;
+  redirect("/overview");
 }
