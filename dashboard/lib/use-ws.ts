@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 export interface WsMessage {
   channel: string;
   data: Record<string, unknown>;
+  receivedAt: Date;
 }
 
 export function useWebSocket() {
@@ -20,8 +21,9 @@ export function useWebSocket() {
     ws.onclose = () => setConnected(false);
     ws.onmessage = (e) => {
       try {
-        const msg = JSON.parse(e.data) as WsMessage;
-        if (msg.channel) {
+        const raw = JSON.parse(e.data) as Omit<WsMessage, "receivedAt">;
+        if (raw.channel) {
+          const msg: WsMessage = { ...raw, receivedAt: new Date() };
           setMessages((prev) => [msg, ...prev].slice(0, 200));
         }
       } catch {

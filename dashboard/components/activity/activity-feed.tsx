@@ -32,7 +32,7 @@ export function ActivityFeed() {
           {messages.map((msg: WsMessage, i: number) => (
             <div key={i} className="flex gap-3 items-start border-b border-border/30 pb-1">
               <span className="text-muted shrink-0">
-                {new Date().toLocaleTimeString()}
+                {msg.receivedAt.toLocaleTimeString()}
               </span>
               <span className={`shrink-0 w-28 ${channelColor(msg.channel)}`}>
                 [{channelLabel(msg.channel)}]
