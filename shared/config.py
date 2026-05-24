@@ -71,3 +71,18 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+# Warn loudly if production-unsafe defaults are still in place
+import warnings as _warnings
+if settings.jwt_secret == "dev-secret-change-in-production":
+    _warnings.warn(
+        "JWT_SECRET is using the insecure default. "
+        "Set JWT_SECRET in your .env before going live.",
+        stacklevel=2,
+    )
+if settings.dashboard_password == "hedgefund2026":
+    _warnings.warn(
+        "DASHBOARD_PASSWORD is using the insecure default. "
+        "Set DASHBOARD_PASSWORD in your .env before going live.",
+        stacklevel=2,
+    )

@@ -1,10 +1,11 @@
 # tests/gateway/test_auth.py
 import pytest
+from shared.config import settings
 
 
 @pytest.mark.asyncio
 async def test_login_with_correct_password_returns_token(client):
-    resp = await client.post("/auth/login", json={"password": "hedgefund2026"})
+    resp = await client.post("/auth/login", json={"password": settings.dashboard_password})
     assert resp.status_code == 200
     data = resp.json()
     assert "access_token" in data
