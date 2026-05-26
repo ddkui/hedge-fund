@@ -60,10 +60,10 @@ class Settings(BaseSettings):
     capital_com_password: str = ""
     capital_com_demo: bool = True      # True = demo, False = live account
 
-    capital_com_leverage_forex: int = 10
-    capital_com_leverage_indices: int = 5
-    capital_com_leverage_commodities: int = 5
-    capital_com_leverage_shares: int = 5
+    capital_com_leverage_forex: int = Field(default=10, ge=1)
+    capital_com_leverage_indices: int = Field(default=5, ge=1)
+    capital_com_leverage_commodities: int = Field(default=5, ge=1)
+    capital_com_leverage_shares: int = Field(default=5, ge=1)
 
     capital_com_watchlist: str = "GOLD,EURUSD,US30,AAPL"
 
@@ -84,6 +84,7 @@ class Settings(BaseSettings):
     @computed_field
     @property
     def capital_com_base_url(self) -> str:
+        # gbksoft.net is Capital.com's official backend provider domain
         if self.capital_com_demo:
             return "https://demo-api-capital.backend.gbksoft.net"
         return "https://api-capital.backend.gbksoft.net"
