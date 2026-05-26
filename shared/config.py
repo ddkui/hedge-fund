@@ -55,6 +55,18 @@ class Settings(BaseSettings):
     alpaca_base_url: str = "https://paper-api.alpaca.markets"
     binance_base_url: str = "https://api.binance.com"
 
+    capital_com_api_key: str = ""
+    capital_com_identifier: str = ""   # your login email / username
+    capital_com_password: str = ""
+    capital_com_demo: bool = True      # True = demo, False = live account
+
+    capital_com_leverage_forex: int = 10
+    capital_com_leverage_indices: int = 5
+    capital_com_leverage_commodities: int = 5
+    capital_com_leverage_shares: int = 5
+
+    capital_com_watchlist: str = "GOLD,EURUSD,US30,AAPL"
+
     gateway_port: int = 8000
     jwt_secret: str = "dev-secret-change-in-production"
     dashboard_password: str = "hedgefund2026"
@@ -68,6 +80,13 @@ class Settings(BaseSettings):
     @property
     def db_dsn(self) -> str:
         return f"postgresql://{self.db_user}:{self.db_password}@{self.db_host}:{self.db_port}/{self.db_name}"
+
+    @computed_field
+    @property
+    def capital_com_base_url(self) -> str:
+        if self.capital_com_demo:
+            return "https://demo-api-capital.backend.gbksoft.net"
+        return "https://api-capital.backend.gbksoft.net"
 
 
 settings = Settings()
