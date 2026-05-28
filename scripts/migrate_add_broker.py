@@ -20,12 +20,23 @@ END $$;
 
 
 async def main():
+    if not settings.db_dsn:
+        print("ERROR: DB_DSN not configured")
+        sys.exit(1)
+
     print("Connecting to TimescaleDB...")
-    conn = await asyncpg.connect(settings.db_dsn)
-    print("Running migration...")
-    await conn.execute(MIGRATION)
-    await conn.close()
-    print("Migration complete: trades.broker and trades.asset_class added.")
+    conn = None
+    try:
+        conn = await asyncpg.connect(settings.db_dsn)
+        print("Running migration...")
+        await conn.execute(MIGRATION)
+        print("Migration complete: trades.broker and trades.asset_class added.")
+    except Exception as exc:
+        print(f"ERROR: Migration failed: {exc}")
+        sys.exit(1)
+    finally:
+        if conn:
+            await conn.close()
 
 
 if __name__ == "__main__":
