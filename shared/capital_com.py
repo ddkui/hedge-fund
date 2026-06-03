@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from typing import Any
 import httpx
 import structlog
+from shared.config import settings
 
 
 class CapitalComSession:
@@ -136,9 +137,6 @@ class CapitalComSession:
             return float(confirm.json()["level"])
 
 
-from shared.config import settings
-
-
 def get_leverage(asset_class: str) -> int:
     """Return leverage multiplier for a given asset class."""
     mapping = {
@@ -169,8 +167,9 @@ class CapitalPriceFeed:
         backoff = 1
         while True:
             try:
-                for epic in self.epics:
-                    await self._tick(epic)
+                async with httpx.AsyncClient(timeout=10) as client:
+                    for epic in self.epics:
+                        await self._tick(epic, client)
                 backoff = 1  # reset on success
                 await asyncio.sleep(self.interval_seconds)
             except asyncio.CancelledError:
@@ -180,24 +179,22 @@ class CapitalPriceFeed:
                 await asyncio.sleep(min(backoff, 60))
                 backoff = min(backoff * 2, 60)
 
-    async def _tick(self, epic: str) -> None:
-        async with httpx.AsyncClient(timeout=10) as client:
-            resp = await client.get(
-                f"{self.session.base_url}/api/v1/markets/{epic}",
-                headers=self.session._auth_headers(),
-            )
-            resp.raise_for_status()
-            snap = resp.json()["snapshot"]
-            bid = float(snap["bid"])
-            ask = float(snap["offer"])
-            mid = (bid + ask) / 2.0
-            now = datetime.now(timezone.utc)
-
+    async def _tick(self, epic: str, client: httpx.AsyncClient) -> None:
+        resp = await client.get(
+            f"{self.session.base_url}/api/v1/markets/{epic}",
+            headers=self.session._auth_headers(),
+        )
+        resp.raise_for_status()
+        snap = resp.json()["snapshot"]
+        bid = float(snap["bid"])
+        ask = float(snap["offer"])
+        mid = (bid + ask) / 2.0
+        now = datetime.now(timezone.utc)
         await self.db.execute(
             """
             INSERT INTO prices (time, symbol, asset_class, open, high, low, close, volume)
             VALUES ($1, $2, 'cfd', $3, $3, $3, $3, 0)
-            ON CONFLICT (time, symbol) DO UPDATE SET close = EXCLUDED.close
+            ON CONFLICT ON CONSTRAINT prices_time_symbol_unique DO UPDATE SET close = EXCLUDED.close
             """,
             now, epic, mid,
         )

@@ -237,15 +237,10 @@ async def test_price_feed_upserts_tick_to_db():
 
     feed = CapitalPriceFeed(session=session, db=db, epics=["GOLD"], interval_seconds=0)
 
-    with patch("shared.capital_com.httpx.AsyncClient") as mock_client_cls:
-        mock_client = AsyncMock()
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=None)
-        mock_client.get = AsyncMock(return_value=mock_market_response(1899.0, 1901.0))
-        mock_client_cls.return_value = mock_client
+    mock_client = AsyncMock()
+    mock_client.get = AsyncMock(return_value=mock_market_response(1899.0, 1901.0))
 
-        # Run one tick only
-        await feed._tick("GOLD")
+    await feed._tick("GOLD", mock_client)
 
     db.execute.assert_called_once()
     call_args = db.execute.call_args[0]
@@ -266,7 +261,7 @@ async def test_price_feed_reconnects_on_disconnect():
 
     call_count = 0
 
-    async def flaky_tick(epic):
+    async def flaky_tick(epic, client):
         nonlocal call_count
         call_count += 1
         if call_count == 1:
