@@ -47,8 +47,12 @@ class CapitalComSession:
                 json={"identifier": self.identifier, "password": self.password, "encryptedPassword": False},
             )
             resp.raise_for_status()
-            self.cst = resp.headers["CST"]
-            self.security_token = resp.headers["X-SECURITY-TOKEN"]
+            cst = resp.headers.get("CST")
+            sec = resp.headers.get("X-SECURITY-TOKEN")
+            if not cst or not sec:
+                raise ValueError(f"Capital.com auth response missing tokens (CST={cst!r}, X-SECURITY-TOKEN={sec!r})")
+            self.cst = cst
+            self.security_token = sec
             self.logger.info("capital_com_authenticated")
 
     async def connect(self) -> None:
@@ -67,11 +71,11 @@ class CapitalComSession:
     async def _refresh_loop(self) -> None:
         """Re-authenticate every 9 minutes to keep tokens alive."""
         while True:
+            await asyncio.sleep(540)  # 9 minutes
             try:
                 await self._authenticate()
             except Exception as exc:
                 self.logger.error("capital_com_refresh_failed", error=str(exc))
-            await asyncio.sleep(540)  # 9 minutes
 
     async def place_order(self, epic: str, direction: str, size: float) -> float | None:
         """

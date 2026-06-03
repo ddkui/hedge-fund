@@ -55,11 +55,12 @@ async def test_session_auth_creates_tokens():
 
     assert session.cst == "cst-token"
     assert session.security_token == "sec-token"
+    await session.disconnect()  # cancel background refresh task
 
 
 @pytest.mark.asyncio
 async def test_session_reauth_on_401():
-    """On 401 during place_order, session re-auths and retries."""
+    """On 401 during place_order, session re-auths and retry uses fresh tokens."""
     session = make_session()
     session.cst = "old-cst"
     session.security_token = "old-token"
@@ -68,47 +69,54 @@ async def test_session_reauth_on_401():
     unauth.status_code = 401
     unauth.json.return_value = {}
 
-    with patch.object(session, "_authenticate", new_callable=AsyncMock) as mock_auth, \
+    async def mock_auth_update():
+        session.cst = "new-cst"
+        session.security_token = "new-token"
+
+    with patch.object(session, "_authenticate", side_effect=mock_auth_update), \
          patch("shared.capital_com.httpx.AsyncClient") as mock_client_cls:
 
         mock_client = AsyncMock()
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=None)
         mock_client.post = AsyncMock(side_effect=[
-            unauth,                              # first attempt → 401
-            mock_position_response("REF1"),       # retry after reauth
+            unauth,
+            mock_position_response("REF1"),
         ])
         mock_client.get = AsyncMock(return_value=mock_confirm_response(1850.0))
         mock_client_cls.return_value = mock_client
 
-        mock_auth.return_value = None
-
         price = await session.place_order("GOLD", "BUY", 1.0)
 
-    mock_auth.assert_called_once()
     assert price == 1850.0
+    # Verify the second POST used the new tokens
+    second_post_kwargs = mock_client.post.call_args_list[1][1]
+    headers_sent = second_post_kwargs.get("headers", {})
+    assert headers_sent.get("CST") == "new-cst"
+    assert headers_sent.get("X-SECURITY-TOKEN") == "new-token"
 
 
 @pytest.mark.asyncio
 async def test_session_refresh_called_before_expiry():
-    """_refresh_loop calls _authenticate before the 9-minute mark."""
+    """_refresh_loop sleeps 9 minutes then calls _authenticate."""
     session = make_session()
     session.cst = "cst"
     session.security_token = "sec"
-    call_count = 0
+    call_order = []
 
     async def fake_auth():
-        nonlocal call_count
-        call_count += 1
+        call_order.append("auth")
 
     session._authenticate = fake_auth
 
-    # Patch asyncio.sleep to skip the 9-minute wait
     sleep_calls = []
 
     async def fake_sleep(secs):
+        call_order.append(f"sleep:{secs}")
         sleep_calls.append(secs)
-        raise asyncio.CancelledError  # stop after first tick
+        # Allow the loop to proceed after first sleep, stop after first auth
+        if len(sleep_calls) >= 2:
+            raise asyncio.CancelledError
 
     with patch("shared.capital_com.asyncio.sleep", fake_sleep):
         try:
@@ -116,8 +124,10 @@ async def test_session_refresh_called_before_expiry():
         except asyncio.CancelledError:
             pass
 
-    assert sleep_calls == [540]   # 9 minutes = 540 seconds
-    assert call_count == 1
+    # First event should be sleep(540), then auth
+    assert call_order[0] == "sleep:540"
+    assert call_order[1] == "auth"
+    assert sleep_calls[0] == 540
 
 
 # ── order placement ───────────────────────────────────────────────────────────
