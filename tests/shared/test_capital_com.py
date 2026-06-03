@@ -214,3 +214,95 @@ async def test_capital_fill_fails_trade_on_double_failure():
         price = await session.place_order("GOLD", "BUY", 1.0)
 
     assert price is None
+
+
+# ── price feed ────────────────────────────────────────────────────────────────
+
+def mock_market_response(bid=1899.0, ask=1901.0):
+    resp = MagicMock()
+    resp.status_code = 200
+    resp.json.return_value = {
+        "snapshot": {"bid": bid, "offer": ask}
+    }
+    return resp
+
+
+@pytest.mark.asyncio
+async def test_price_feed_upserts_tick_to_db():
+    from shared.capital_com import CapitalPriceFeed
+    session = make_session()
+    session.cst = "cst"
+    session.security_token = "sec"
+    db = AsyncMock()
+
+    feed = CapitalPriceFeed(session=session, db=db, epics=["GOLD"], interval_seconds=0)
+
+    with patch("shared.capital_com.httpx.AsyncClient") as mock_client_cls:
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=None)
+        mock_client.get = AsyncMock(return_value=mock_market_response(1899.0, 1901.0))
+        mock_client_cls.return_value = mock_client
+
+        # Run one tick only
+        await feed._tick("GOLD")
+
+    db.execute.assert_called_once()
+    call_args = db.execute.call_args[0]
+    assert "prices" in call_args[0]
+    # mid = (1899 + 1901) / 2 = 1900.0
+    assert 1900.0 in call_args
+
+
+@pytest.mark.asyncio
+async def test_price_feed_reconnects_on_disconnect():
+    """On exception during tick, feed backs off then retries."""
+    from shared.capital_com import CapitalPriceFeed
+    session = make_session()
+    session.cst = "cst"
+    session.security_token = "sec"
+    db = AsyncMock()
+    feed = CapitalPriceFeed(session=session, db=db, epics=["GOLD"], interval_seconds=0)
+
+    call_count = 0
+
+    async def flaky_tick(epic):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            raise ConnectionError("disconnected")
+        raise asyncio.CancelledError  # stop after second call
+
+    feed._tick = flaky_tick
+
+    sleep_calls = []
+
+    async def fake_sleep(secs):
+        sleep_calls.append(secs)
+
+    with patch("shared.capital_com.asyncio.sleep", fake_sleep):
+        try:
+            await feed.run()
+        except asyncio.CancelledError:
+            pass
+
+    # First backoff should be 1 second
+    assert sleep_calls[0] == 1
+
+
+@pytest.mark.asyncio
+async def test_leverage_applied_correctly_per_asset_class():
+    """get_leverage returns the right multiplier per asset_class."""
+    from shared.capital_com import get_leverage
+    mock_settings = MagicMock()
+    mock_settings.capital_com_leverage_forex = 10
+    mock_settings.capital_com_leverage_indices = 5
+    mock_settings.capital_com_leverage_commodities = 5
+    mock_settings.capital_com_leverage_shares = 5
+
+    with patch("shared.capital_com.settings", mock_settings):
+        assert get_leverage("forex") == 10
+        assert get_leverage("indices") == 5
+        assert get_leverage("commodities") == 5
+        assert get_leverage("shares") == 5
+        assert get_leverage("unknown") == 1  # default: no leverage

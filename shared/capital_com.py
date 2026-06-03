@@ -134,3 +134,71 @@ class CapitalComSession:
             )
             confirm.raise_for_status()
             return float(confirm.json()["level"])
+
+
+from shared.config import settings
+
+
+def get_leverage(asset_class: str) -> int:
+    """Return leverage multiplier for a given asset class."""
+    mapping = {
+        "forex": settings.capital_com_leverage_forex,
+        "indices": settings.capital_com_leverage_indices,
+        "commodities": settings.capital_com_leverage_commodities,
+        "shares": settings.capital_com_leverage_shares,
+    }
+    return mapping.get(asset_class.lower(), 1)
+
+
+class CapitalPriceFeed:
+    """
+    Polls Capital.com /api/v1/markets/{epic} for each epic in the watchlist
+    and upserts the mid-price into the prices table.
+
+    On error: exponential backoff (1s → 2s → 4s … cap 60s), reset on success.
+    """
+
+    def __init__(self, session: CapitalComSession, db: Any, epics: list[str], interval_seconds: int = 5):
+        self.session = session
+        self.db = db
+        self.epics = epics
+        self.interval_seconds = interval_seconds
+        self.logger = structlog.get_logger()
+
+    async def run(self) -> None:
+        backoff = 1
+        while True:
+            try:
+                for epic in self.epics:
+                    await self._tick(epic)
+                backoff = 1  # reset on success
+                await asyncio.sleep(self.interval_seconds)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                self.logger.error("capital_feed_error", error=str(exc))
+                await asyncio.sleep(min(backoff, 60))
+                backoff = min(backoff * 2, 60)
+
+    async def _tick(self, epic: str) -> None:
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.get(
+                f"{self.session.base_url}/api/v1/markets/{epic}",
+                headers=self.session._auth_headers(),
+            )
+            resp.raise_for_status()
+            snap = resp.json()["snapshot"]
+            bid = float(snap["bid"])
+            ask = float(snap["offer"])
+            mid = (bid + ask) / 2.0
+            now = datetime.now(timezone.utc)
+
+        await self.db.execute(
+            """
+            INSERT INTO prices (time, symbol, asset_class, open, high, low, close, volume)
+            VALUES ($1, $2, 'cfd', $3, $3, $3, $3, 0)
+            ON CONFLICT (time, symbol) DO UPDATE SET close = EXCLUDED.close
+            """,
+            now, epic, mid,
+        )
+        self.logger.debug("capital_feed_tick", epic=epic, mid=mid)
