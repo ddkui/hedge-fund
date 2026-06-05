@@ -186,8 +186,9 @@ async def test_capital_com_fill_fails_trade_on_none():
         price = await agent._capital_com_fill(trade)
 
     assert price is None
+    # _fail_trade makes 2 db.execute calls: UPDATE trades SET status='failed' + INSERT INTO risk_events
     fail_calls = [c for c in agent.db.execute.call_args_list if "failed" in str(c)]
-    assert len(fail_calls) == 1
+    assert len(fail_calls) == 2
 
 
 @pytest.mark.asyncio

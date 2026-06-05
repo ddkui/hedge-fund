@@ -120,9 +120,7 @@ class ExecutionAgent(BaseAgent):
             await session.disconnect()
 
         if price is None:
-            await self.db.execute(
-                "UPDATE trades SET status = $1 WHERE id = $2", "failed", trade["id"]
-            )
+            await self._fail_trade(trade["id"], "capital_com place_order returned None")
             return None
 
         self.logger.info(
