@@ -2,6 +2,7 @@ import asyncio
 from datetime import datetime, timezone
 from shared.agent_base import BaseAgent
 from shared.config import settings
+from shared.capital_com import CapitalComSession, get_leverage
 
 
 class ExecutionAgent(BaseAgent):
@@ -13,7 +14,7 @@ class ExecutionAgent(BaseAgent):
             return
 
         pending = await self.db.fetch(
-            "SELECT id, symbol, action, quantity, paper FROM trades WHERE status = 'pending' ORDER BY time ASC"
+            "SELECT id, symbol, action, quantity, paper, broker, asset_class FROM trades WHERE status = 'pending' ORDER BY time ASC"
         )
         if not pending:
             return
@@ -45,6 +46,10 @@ class ExecutionAgent(BaseAgent):
             if not rows:
                 return None
             return float(rows[0]["close"])
+
+        broker = trade.get("broker", "paper")
+        if broker == "capital_com" and settings.capital_com_api_key:
+            return await self._capital_com_fill(trade)
 
         symbol = trade["symbol"]
         if symbol.upper().endswith("USDT"):
@@ -95,6 +100,39 @@ class ExecutionAgent(BaseAgent):
             except Exception as exc2:
                 await self._fail_trade(trade["id"], str(exc2))
                 return None
+
+    async def _capital_com_fill(self, trade) -> float | None:
+        direction = "SELL" if trade["action"] in ("close", "short") else "BUY"
+        asset_class = trade.get("asset_class", "shares")
+        leverage = get_leverage(asset_class)
+        effective_size = float(trade["quantity"]) * leverage
+
+        session = CapitalComSession(
+            base_url=settings.capital_com_base_url,
+            api_key=settings.capital_com_api_key,
+            identifier=settings.capital_com_identifier,
+            password=settings.capital_com_password,
+        )
+        try:
+            await session.connect()
+            price = await session.place_order(trade["symbol"], direction, effective_size)
+        finally:
+            await session.disconnect()
+
+        if price is None:
+            await self.db.execute(
+                "UPDATE trades SET status = $1 WHERE id = $2", "failed", trade["id"]
+            )
+            return None
+
+        self.logger.info(
+            "capital_com_fill",
+            symbol=trade["symbol"],
+            direction=direction,
+            size=effective_size,
+            price=price,
+        )
+        return price
 
     async def _apply_fill(
         self,
