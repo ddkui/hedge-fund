@@ -48,7 +48,10 @@ class ExecutionAgent(BaseAgent):
             return float(rows[0]["close"])
 
         broker = trade.get("broker", "paper")
-        if broker == "capital_com" and settings.capital_com_api_key:
+        if broker == "capital_com":
+            if not settings.capital_com_api_key:
+                await self._fail_trade(trade["id"], "capital_com broker selected but CAPITAL_COM_API_KEY is not configured")
+                return None
             return await self._capital_com_fill(trade)
 
         symbol = trade["symbol"]
@@ -107,7 +110,7 @@ class ExecutionAgent(BaseAgent):
         leverage = get_leverage(asset_class)
         effective_size = float(trade["quantity"]) * leverage
 
-        async def _attempt() -> float:
+        async def _attempt() -> float | None:
             session = CapitalComSession(
                 base_url=settings.capital_com_base_url,
                 api_key=settings.capital_com_api_key,
@@ -124,12 +127,8 @@ class ExecutionAgent(BaseAgent):
             price = await _attempt()
         except Exception as exc:
             self.logger.error("capital_com_fill_failed", symbol=trade["symbol"], error=str(exc))
-            await asyncio.sleep(2)
-            try:
-                price = await _attempt()
-            except Exception as exc2:
-                await self._fail_trade(trade["id"], str(exc2))
-                return None
+            await self._fail_trade(trade["id"], str(exc))
+            return None
 
         if price is None:
             await self._fail_trade(trade["id"], "capital_com place_order returned None")

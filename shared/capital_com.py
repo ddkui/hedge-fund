@@ -134,7 +134,11 @@ class CapitalComSession:
                 headers=self._auth_headers(),
             )
             confirm.raise_for_status()
-            return float(confirm.json()["level"])
+            confirm_data = confirm.json()
+            deal_status = confirm_data.get("dealStatus", "ACCEPTED")
+            if deal_status != "ACCEPTED":
+                raise ValueError(f"Capital.com order rejected: {deal_status} — {confirm_data.get('rejectReason', 'unknown')}")
+            return float(confirm_data["level"])
 
 
 def get_leverage(asset_class: str) -> int:
@@ -169,7 +173,10 @@ class CapitalPriceFeed:
             try:
                 async with httpx.AsyncClient(timeout=10) as client:
                     for epic in self.epics:
-                        await self._tick(epic, client)
+                        try:
+                            await self._tick(epic, client)
+                        except Exception as epic_exc:
+                            self.logger.error("capital_feed_tick_error", epic=epic, error=str(epic_exc))
                 backoff = 1  # reset on success
                 await asyncio.sleep(self.interval_seconds)
             except asyncio.CancelledError:

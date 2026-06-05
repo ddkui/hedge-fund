@@ -26,19 +26,21 @@ async def main() -> None:
     db = Database(settings.db_dsn)
     await db.connect()
 
-    session = CapitalComSession(
-        base_url=settings.capital_com_base_url,
-        api_key=settings.capital_com_api_key,
-        identifier=settings.capital_com_identifier,
-        password=settings.capital_com_password,
-    )
-    await session.connect()
-
-    feed = CapitalPriceFeed(session=session, db=db, epics=epics, interval_seconds=5)
     try:
-        await feed.run()
+        session = CapitalComSession(
+            base_url=settings.capital_com_base_url,
+            api_key=settings.capital_com_api_key,
+            identifier=settings.capital_com_identifier,
+            password=settings.capital_com_password,
+        )
+        await session.connect()
+
+        feed = CapitalPriceFeed(session=session, db=db, epics=epics, interval_seconds=5)
+        try:
+            await feed.run()
+        finally:
+            await session.disconnect()
     finally:
-        await session.disconnect()
         await db.disconnect()
 
 

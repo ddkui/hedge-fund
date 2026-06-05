@@ -251,7 +251,7 @@ async def test_price_feed_upserts_tick_to_db():
 
 @pytest.mark.asyncio
 async def test_price_feed_reconnects_on_disconnect():
-    """On exception during tick, feed backs off then retries."""
+    """Per-epic errors are isolated: a single failing epic is logged but the cycle continues."""
     from shared.capital_com import CapitalPriceFeed
     session = make_session()
     session.cst = "cst"
@@ -281,8 +281,10 @@ async def test_price_feed_reconnects_on_disconnect():
         except asyncio.CancelledError:
             pass
 
-    # First backoff should be 1 second
-    assert sleep_calls[0] == 1
+    # The per-epic error is isolated: cycle completes and calls interval sleep (0), not backoff.
+    # call_count == 2 confirms the second tick was reached (CancelledError stops the loop).
+    assert call_count == 2
+    assert sleep_calls[0] == 0  # interval sleep after first successful cycle
 
 
 @pytest.mark.asyncio
