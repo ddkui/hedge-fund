@@ -107,17 +107,29 @@ class ExecutionAgent(BaseAgent):
         leverage = get_leverage(asset_class)
         effective_size = float(trade["quantity"]) * leverage
 
-        session = CapitalComSession(
-            base_url=settings.capital_com_base_url,
-            api_key=settings.capital_com_api_key,
-            identifier=settings.capital_com_identifier,
-            password=settings.capital_com_password,
-        )
+        async def _attempt() -> float:
+            session = CapitalComSession(
+                base_url=settings.capital_com_base_url,
+                api_key=settings.capital_com_api_key,
+                identifier=settings.capital_com_identifier,
+                password=settings.capital_com_password,
+            )
+            try:
+                await session.connect()
+                return await session.place_order(trade["symbol"], direction, effective_size)
+            finally:
+                await session.disconnect()
+
         try:
-            await session.connect()
-            price = await session.place_order(trade["symbol"], direction, effective_size)
-        finally:
-            await session.disconnect()
+            price = await _attempt()
+        except Exception as exc:
+            self.logger.error("capital_com_fill_failed", symbol=trade["symbol"], error=str(exc))
+            await asyncio.sleep(2)
+            try:
+                price = await _attempt()
+            except Exception as exc2:
+                await self._fail_trade(trade["id"], str(exc2))
+                return None
 
         if price is None:
             await self._fail_trade(trade["id"], "capital_com place_order returned None")
@@ -146,7 +158,7 @@ class ExecutionAgent(BaseAgent):
         quantity = float(trade["quantity"])
         action = trade["action"]
         trade_value = quantity * fill_price
-        asset_class = "crypto" if trade["symbol"].upper().endswith("USDT") else "equity"
+        asset_class = trade.get("asset_class") or ("crypto" if trade["symbol"].upper().endswith("USDT") else "equity")
 
         if action == "close":
             await self.db.execute(

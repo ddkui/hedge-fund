@@ -117,14 +117,20 @@ async def test_capital_com_fill_long_calls_place_order():
     }
 
     mock_session = AsyncMock()
+    mock_session.connect = AsyncMock()
     mock_session.place_order = AsyncMock(return_value=1900.5)
+    mock_session.disconnect = AsyncMock()
+
+    mock_capital_settings = MagicMock()
+    mock_capital_settings.capital_com_leverage_commodities = 5
 
     with patch("agents.execution.agent.settings", mock_settings), \
+         patch("shared.capital_com.settings", mock_capital_settings), \
          patch("agents.execution.agent.CapitalComSession", return_value=mock_session):
         price = await agent._capital_com_fill(trade)
 
     assert price == 1900.5
-    # commodities leverage = 5 (from mock_settings), effective_size = 2.0 * 5 = 10.0
+    # commodities leverage = 5, effective_size = 2.0 * 5 = 10.0
     mock_session.place_order.assert_called_once_with("GOLD", "BUY", 10.0)
 
 
