@@ -221,8 +221,82 @@ def test_build_report_sections():
         "pred_low": 49000.0, "pred_high": 50000.0, "confidence": 55.0,
     }
     lines = [_format_line("AAPL", bullish_fc), _format_line("BTC", bearish_fc)]
-    report = _build_report(lines, now, total_symbols=3)
+    report = _build_report(lines, [], now, total_symbols=3)
     assert "Kronos" in report
     assert "Bullish" in report
     assert "Bearish" in report
     assert "2026-06-06" in report
+
+
+def test_enrich_reasoning_adds_history():
+    from agents.quant.kronos.agent import _enrich_reasoning
+    fc = {
+        "signal_type": "bullish_signal", "pred_change_pct": 2.0,
+        "reasoning": "Kronos-mini: current=100 => pred=102.",
+        "current_close": 100.0, "pred_close": 102.0,
+    }
+    past = [
+        {"metadata": {"symbol": "AAPL", "signal_type": "bullish_signal", "pred_change_pct": 1.5}},
+        {"metadata": {"symbol": "AAPL", "signal_type": "bearish_signal", "pred_change_pct": -0.8}},
+    ]
+    enriched = _enrich_reasoning(fc, "AAPL", past)
+    assert "History" in enriched["reasoning"]
+    assert "bullish" in enriched["reasoning"]
+    assert "bearish" in enriched["reasoning"]
+
+
+def test_enrich_reasoning_no_history():
+    from agents.quant.kronos.agent import _enrich_reasoning
+    fc = {"signal_type": "bullish_signal", "reasoning": "base reasoning."}
+    result = _enrich_reasoning(fc, "AAPL", [])
+    assert result["reasoning"] == "base reasoning."
+
+
+def test_build_report_includes_history_section():
+    from agents.quant.kronos.agent import _build_report, _format_line, _format_history
+    now = datetime(2026, 6, 6, 12, 0, tzinfo=timezone.utc)
+    fc = {
+        "signal_type": "bullish_signal", "pred_change_pct": 2.0,
+        "current_close": 100.0, "pred_close": 102.0,
+        "pred_low": 101.0, "pred_high": 103.0, "confidence": 65.0,
+    }
+    past = [{"metadata": {"symbol": "AAPL", "signal_type": "bullish_signal", "pred_change_pct": 1.5}}]
+    lines = [_format_line("AAPL", fc)]
+    hist = [_format_history("AAPL", past)]
+    report = _build_report(lines, hist, now, total_symbols=1)
+    assert "Forecast History" in report
+    assert "AAPL" in report
+
+
+@pytest.mark.asyncio
+async def test_write_to_chroma_called_per_symbol():
+    agent = make_agent()
+    agent._model_loaded = True
+
+    rows = _make_ohlcv_rows(60)
+    current_close = rows[-1]["close"]
+    pred_close = current_close * 1.025
+
+    pred_df = pd.DataFrame(_make_ohlcv_rows(24))
+    pred_df["close"] = pred_close
+    pred_df["high"] = pred_close * 1.01
+    pred_df["low"] = pred_close * 0.99
+
+    agent._predictor = MagicMock()
+    agent._predictor.predict.return_value = pred_df
+
+    agent.db.fetch = AsyncMock(return_value=rows)
+    agent.db.execute = AsyncMock()
+    agent.recall_from_chroma = AsyncMock(return_value=[])
+    agent.write_to_chroma = AsyncMock()
+
+    with patch("agents.quant.kronos.agent.settings") as mock_settings:
+        mock_settings.stock_watchlist = "AAPL"
+        mock_settings.crypto_watchlist = ""
+        await agent.run_once()
+
+    agent.write_to_chroma.assert_called_once()
+    call_kwargs = agent.write_to_chroma.call_args[1]
+    assert call_kwargs["metadata"]["symbol"] == "AAPL"
+    assert "signal_type" in call_kwargs["metadata"]
+    assert call_kwargs["doc_id"].startswith("kronos-AAPL-")

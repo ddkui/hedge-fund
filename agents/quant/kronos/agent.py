@@ -88,8 +88,27 @@ class KronosResearchAgent(MemoryMixin, AnalysisAgent):
         now = datetime.now(timezone.utc)
         results = await self._predict_all(symbol_data)
 
+        # Recall past forecasts per symbol BEFORE writing current ones
+        history: dict[str, list[dict]] = {}
+        for symbol in results:
+            past = await self.recall_from_chroma(
+                query=f"{symbol} price forecast prediction signal",
+                n_results=10,
+            )
+            # Filter to this symbol's own records
+            history[symbol] = [
+                p for p in past
+                if p.get("metadata", {}).get("symbol") == symbol
+            ][:5]
+
         report_lines: list[str] = []
+        history_sections: list[str] = []
+
         for symbol, forecast in results.items():
+            # Enrich reasoning with historical trend
+            past_runs = history.get(symbol, [])
+            forecast = _enrich_reasoning(forecast, symbol, past_runs)
+
             await self._store_forecast(symbol, forecast, now)
             await self.store_signal(
                 symbol=symbol,
@@ -98,9 +117,27 @@ class KronosResearchAgent(MemoryMixin, AnalysisAgent):
                 reasoning=forecast["reasoning"],
                 metadata={"source": "kronos", "pred_change_pct": forecast["pred_change_pct"]},
             )
-            report_lines.append(_format_line(symbol, forecast))
 
-        report_md = _build_report(report_lines, now, len(symbols))
+            # Write this forecast to ChromaDB for future recall
+            await self.write_to_chroma(
+                doc_id=f"kronos-{symbol}-{now.isoformat()}",
+                text=forecast["reasoning"],
+                metadata={
+                    "symbol": symbol,
+                    "signal_type": forecast["signal_type"],
+                    "pred_change_pct": forecast["pred_change_pct"],
+                    "confidence": forecast["confidence"],
+                    "pred_close": forecast["pred_close"],
+                    "current_close": forecast["current_close"],
+                    "time": now.isoformat(),
+                },
+            )
+
+            report_lines.append(_format_line(symbol, forecast))
+            if past_runs:
+                history_sections.append(_format_history(symbol, past_runs))
+
+        report_md = _build_report(report_lines, history_sections, now, len(symbols))
 
         await self.write_to_obsidian(
             title=f"Kronos Forecast {now.strftime('%Y-%m-%d %H:%M')} UTC",
@@ -243,6 +280,37 @@ class KronosResearchAgent(MemoryMixin, AnalysisAgent):
 #  Report formatting helpers                                           #
 # ------------------------------------------------------------------ #
 
+def _enrich_reasoning(forecast: dict, symbol: str, past_runs: list[dict]) -> dict:
+    """Append a historical trend summary to the forecast reasoning."""
+    if not past_runs:
+        return forecast
+    trend_parts = []
+    for p in past_runs:
+        m = p.get("metadata", {})
+        sig = m.get("signal_type", "?").replace("_signal", "")
+        pct = float(m.get("pred_change_pct", 0))
+        trend_parts.append(f"{sig} {pct:+.2f}%")
+    trend_str = " → ".join(trend_parts)
+    forecast = dict(forecast)
+    forecast["reasoning"] = (
+        forecast["reasoning"]
+        + f" History ({len(past_runs)} prior runs): {trend_str}."
+    )
+    return forecast
+
+
+def _format_history(symbol: str, past_runs: list[dict]) -> str:
+    """Format a symbol's past forecasts into a compact history line."""
+    parts = []
+    for p in past_runs:
+        m = p.get("metadata", {})
+        sig = m.get("signal_type", "?").replace("_signal", "")
+        pct = float(m.get("pred_change_pct", 0))
+        arrow = "▲" if sig == "bullish" else ("▼" if sig == "bearish" else "◆")
+        parts.append(f"{arrow}{pct:+.1f}%")
+    return f"  {symbol:<12} prior runs: {' | '.join(parts)}"
+
+
 def _format_line(symbol: str, fc: dict) -> str:
     arrow = "▲" if "bullish" in fc["signal_type"] else ("▼" if "bearish" in fc["signal_type"] else "◆")
     direction = fc["signal_type"].replace("_signal", "").upper()
@@ -253,7 +321,7 @@ def _format_line(symbol: str, fc: dict) -> str:
     )
 
 
-def _build_report(lines: list[str], now: datetime, total_symbols: int) -> str:
+def _build_report(lines: list[str], history_sections: list[str], now: datetime, total_symbols: int) -> str:
     bullish = [l for l in lines if "▲" in l]
     bearish = [l for l in lines if "▼" in l]
     neutral = [l for l in lines if "◆" in l]
@@ -273,5 +341,7 @@ def _build_report(lines: list[str], now: datetime, total_symbols: int) -> str:
         parts += ["### 🔴 Bearish Signals", "```"] + bearish + ["```", ""]
     if neutral:
         parts += ["### ⬜ Neutral", "```"] + neutral + ["```", ""]
+    if history_sections:
+        parts += ["### 📈 Forecast History (ChromaDB)", "```"] + history_sections + ["```", ""]
 
     return "\n".join(parts)
