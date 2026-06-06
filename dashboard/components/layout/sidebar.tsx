@@ -4,12 +4,13 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   LayoutDashboard, Cpu, BarChart2, Activity,
-  FlaskConical, Server, MessageSquare, ArrowLeftRight, BrainCircuit
+  FlaskConical, Server, MessageSquare, ArrowLeftRight, BrainCircuit, TrendingUp
 } from "lucide-react";
 
 const NAV = [
   { href: "/overview",   label: "Overview",   icon: LayoutDashboard },
   { href: "/trades",     label: "Trades",     icon: ArrowLeftRight },
+  { href: "/analytics",  label: "Analytics",  icon: TrendingUp },
   { href: "/consensus",  label: "Consensus",  icon: Cpu },
   { href: "/terminal",   label: "Terminal",   icon: BarChart2 },
   { href: "/activity",   label: "AI Activity",icon: Activity },
