@@ -22,6 +22,8 @@ AGENTS: list[str] = [
     "agents/quant/mean_reversion/main.py",
     "agents/quant/ml_quant/main.py",
     "agents/quant/kronos/main.py",
+    "agents/quant/news_momentum/main.py",
+    "agents/quant/vwap/main.py",
     "agents/quant/supervisor/main.py",
     # Phase 4b: Portfolio execution layer
     "agents/portfolio_mgr/main.py",
