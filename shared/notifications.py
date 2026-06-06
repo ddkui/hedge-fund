@@ -37,6 +37,11 @@ class NotificationService:
 
     def _format_email(self, event: str, data: dict[str, Any]) -> tuple[str, str]:
         """Return (subject, body) for an event."""
+        # Daily brief: use the pre-formatted report and subject from the CIO
+        if event == "daily_brief" and "report" in data:
+            subject = data.get("subject", EVENT_SUBJECTS["daily_brief"])
+            return subject, data["report"]
+
         template = EVENT_SUBJECTS.get(event, "[HedgeFund] Notification: {event}")
         try:
             subject = template.format(**{**data, "event": event})

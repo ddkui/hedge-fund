@@ -61,6 +61,18 @@ class CIOAgent(MemoryMixin, AnalysisAgent):
             "SELECT symbol, reasoning, time FROM signals WHERE signal_type = 'cio_override' AND time > now_or_backtest() - INTERVAL '24 hours'"
         )
 
+        # --- Kronos research forecasts (latest per symbol, last 8 hours) ---
+        kronos_rows = await self.db.fetch(
+            """
+            SELECT DISTINCT ON (symbol)
+                symbol, pred_change_pct, signal_type, confidence, pred_close, pred_high, pred_low, time
+            FROM kronos_forecasts
+            WHERE time > now_or_backtest() - INTERVAL '8 hours'
+            ORDER BY symbol, time DESC
+            """
+        )
+        kronos_forecasts = [dict(r) for r in kronos_rows]
+
         macro_regime = macro_signal[0]["signal_type"] if macro_signal else "unknown"
 
         prompt = self._build_prompt(
@@ -70,6 +82,7 @@ class CIOAgent(MemoryMixin, AnalysisAgent):
             risk_events=[dict(r) for r in risk_events],
             cio_overrides=[dict(r) for r in cio_overrides],
             recent_signals=[dict(r) for r in all_signals[:30]],
+            kronos_forecasts=kronos_forecasts,
         )
 
         raw_response = await self.router.chat(
@@ -103,7 +116,24 @@ class CIOAgent(MemoryMixin, AnalysisAgent):
         if cio_overrides:
             pm_pushback_note = f" PM overrode {len(cio_overrides)} CIO directive(s)."
 
-        brief_reasoning = f"Regime={macro_regime}. {len(directives)} directives issued.{pm_pushback_note} Raw: {raw_response[:500]}"
+        # Build the full daily report (what gets emailed)
+        now = datetime.now(timezone.utc)
+        full_report = self._build_daily_report(
+            now=now,
+            macro_regime=macro_regime,
+            positions=positions_with_pnl,
+            risk_events=[dict(r) for r in risk_events],
+            directives=directives,
+            cio_overrides_count=len(cio_overrides),
+            kronos_forecasts=kronos_forecasts,
+        )
+
+        brief_reasoning = (
+            f"Regime={macro_regime}. {len(directives)} directives issued.{pm_pushback_note} "
+            f"Kronos coverage: {len(kronos_forecasts)} symbols. "
+            f"\n\n{full_report}"
+        )
+
         await self.store_signal(
             signal_type="daily_brief",
             confidence=100.0,
@@ -114,16 +144,43 @@ class CIOAgent(MemoryMixin, AnalysisAgent):
                 "regime": macro_regime,
                 "risk_events_count": len(risk_events),
                 "cio_overrides_count": len(cio_overrides),
+                "kronos_symbol_count": len(kronos_forecasts),
             },
         )
-        now = datetime.now(timezone.utc)
+
+        # Publish to Redis → triggers Gmail notification via NotificationService
+        await self.bus.publish("cio.daily_brief", {
+            "subject": f"AI Hedge Fund Daily Brief — {now.strftime('%Y-%m-%d')}",
+            "report": full_report,
+            "regime": macro_regime,
+            "directives_count": len(directives),
+            "kronos_symbols": len(kronos_forecasts),
+        })
+
         await self.write_to_obsidian(
             title=f"CIO Brief {now.strftime('%Y-%m-%d')}",
-            body=brief_reasoning,
+            body=full_report,
             tags=["cio", "brief"],
         )
 
-    def _build_prompt(self, positions, closed_trades, macro_regime, risk_events, cio_overrides, recent_signals) -> str:
+    # ------------------------------------------------------------------ #
+    #  LLM prompt                                                           #
+    # ------------------------------------------------------------------ #
+
+    def _build_prompt(
+        self, positions, closed_trades, macro_regime,
+        risk_events, cio_overrides, recent_signals, kronos_forecasts,
+    ) -> str:
+        kronos_section = ""
+        if kronos_forecasts:
+            lines = []
+            for kf in kronos_forecasts:
+                arrow = "▲" if "bullish" in kf["signal_type"] else ("▼" if "bearish" in kf["signal_type"] else "→")
+                lines.append(
+                    f"  {arrow} {kf['symbol']}: {kf['pred_change_pct']:+.2f}%  conf={kf['confidence']:.0f}%"
+                )
+            kronos_section = "\n\nKronos AI model price forecasts (24-candle horizon):\n" + "\n".join(lines)
+
         return f"""You are reviewing the hedge fund portfolio. Current macro regime: {macro_regime}.
 
 Open positions with unrealized P&L:
@@ -137,8 +194,9 @@ Recent risk events (last 24h):
 
 PM pushbacks on prior CIO directives:
 {json.dumps(cio_overrides, indent=2, default=str)}
+{kronos_section}
 
-Based on this, provide a JSON array of per-symbol directives. Each item:
+Based on all of the above, provide a JSON array of per-symbol directives. Each item:
 {{
   "symbol": "TICKER",
   "action": "low_conviction" | "avoid_open" | "request_close" | "none",
@@ -147,6 +205,110 @@ Based on this, provide a JSON array of per-symbol directives. Each item:
 }}
 
 Return ONLY the JSON array, nothing else."""
+
+    # ------------------------------------------------------------------ #
+    #  Daily email report                                                   #
+    # ------------------------------------------------------------------ #
+
+    def _build_daily_report(
+        self, now, macro_regime, positions, risk_events,
+        directives, cio_overrides_count, kronos_forecasts,
+    ) -> str:
+        date_str = now.strftime("%Y-%m-%d %H:%M UTC")
+
+        # Portfolio section
+        if positions:
+            pos_lines = [
+                f"  • {p['symbol']} {p['direction'].upper()} "
+                f"qty={p['quantity']:.4f} entry={p['entry_price']:.4f} "
+                f"now={p['current_price']:.4f} pnl={p['unrealized_pnl']:+.2f}"
+                for p in positions
+            ]
+        else:
+            pos_lines = ["  No open positions."]
+
+        # Risk section
+        if risk_events:
+            risk_lines = [f"  ⚠️  {e['limit_type']}: {e['details']} → {e['action_taken']}" for e in risk_events]
+        else:
+            risk_lines = ["  No risk events in last 24h."]
+
+        # Directives section
+        if directives:
+            dir_lines = [
+                f"  • {d.get('symbol','?')}: {d.get('action','none')} "
+                f"(×{d.get('confidence_multiplier',1.0):.1f}) — {d.get('reason','')}"
+                for d in directives if d.get("action", "none") != "none"
+            ]
+            if not dir_lines:
+                dir_lines = ["  No active directives."]
+        else:
+            dir_lines = ["  No directives issued."]
+
+        # Kronos section
+        if kronos_forecasts:
+            bullish = [kf for kf in kronos_forecasts if "bullish" in kf["signal_type"]]
+            bearish = [kf for kf in kronos_forecasts if "bearish" in kf["signal_type"]]
+            neutral = [kf for kf in kronos_forecasts if "neutral" in kf["signal_type"]]
+
+            def kf_line(kf):
+                arrow = "▲" if "bullish" in kf["signal_type"] else ("▼" if "bearish" in kf["signal_type"] else "→")
+                direction = kf["signal_type"].replace("_signal", "").upper()
+                return (
+                    f"  {arrow} {kf['symbol']:<12} {direction:<8} "
+                    f"{kf['pred_change_pct']:>+7.2f}%  "
+                    f"now={kf.get('pred_close',0):.4f}  conf={kf['confidence']:.0f}%"
+                )
+
+            kronos_lines = (
+                (["  🟢 BULLISH:"] + [kf_line(k) for k in bullish] if bullish else []) +
+                (["  🔴 BEARISH:"] + [kf_line(k) for k in bearish] if bearish else []) +
+                (["  ⬜ NEUTRAL:"] + [kf_line(k) for k in neutral] if neutral else [])
+            )
+            kronos_summary = f"  {len(bullish)} bullish · {len(bearish)} bearish · {len(neutral)} neutral across {len(kronos_forecasts)} symbols"
+        else:
+            kronos_lines = ["  No Kronos forecasts available (agent may still be loading model)."]
+            kronos_summary = ""
+
+        sections = [
+            "=" * 60,
+            f"  AI HEDGE FUND — DAILY BRIEF",
+            f"  {date_str}",
+            "=" * 60,
+            "",
+            f"MACRO REGIME:  {macro_regime.upper().replace('_', ' ')}",
+            "",
+            "─" * 60,
+            "OPEN POSITIONS",
+            "─" * 60,
+        ] + pos_lines + [
+            "",
+            "─" * 60,
+            "RISK EVENTS (last 24h)",
+            "─" * 60,
+        ] + risk_lines + [
+            "",
+            "─" * 60,
+            "CIO DIRECTIVES",
+            "─" * 60,
+        ] + dir_lines + [
+            f"  PM overrides today: {cio_overrides_count}",
+            "",
+            "─" * 60,
+            f"KRONOS AI PRICE FORECASTS  (24-candle horizon)",
+            "─" * 60,
+        ] + ([kronos_summary] if kronos_summary else []) + kronos_lines + [
+            "",
+            "=" * 60,
+            "  Generated by AI Hedge Fund System",
+            "=" * 60,
+        ]
+
+        return "\n".join(sections)
+
+    # ------------------------------------------------------------------ #
+    #  Parsing                                                              #
+    # ------------------------------------------------------------------ #
 
     def _parse_directives(self, raw: str) -> list[dict]:
         try:

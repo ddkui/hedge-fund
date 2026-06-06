@@ -11,12 +11,15 @@ async def test_get_portfolio_returns_summary(client, mock_db):
         "open_positions": 2,
         "time": "2026-05-24T10:00:00+00:00",
     }
+    # Endpoint computes total_value dynamically via MTM; with no open positions fetched,
+    # total_value = cash
+    mock_db.fetch.return_value = []
     resp = await client.get("/portfolio")
     assert resp.status_code == 200
     data = resp.json()
-    assert data["total_value"] == 102000.0
+    assert data["total_value"] == 95000.0
     assert data["cash"] == 95000.0
-    assert data["open_positions"] == 2
+    assert data["open_positions"] == 0
 
 
 @pytest.mark.asyncio
@@ -30,12 +33,15 @@ async def test_get_portfolio_no_state_returns_initial_capital(client, mock_db):
 
 @pytest.mark.asyncio
 async def test_get_positions_returns_list(client, mock_db):
-    mock_db.fetch.return_value = [
+    positions = [
         {"id": 1, "symbol": "AAPL", "direction": "long", "quantity": 10.0,
          "entry_price": 180.0, "status": "open", "asset_class": "stock",
          "entry_time": "2026-05-24T09:00:00+00:00", "entry_thesis": "bullish",
          "exit_price": None, "exit_time": None},
     ]
+    prices = [{"symbol": "AAPL", "close": 185.0}]
+    # First fetch returns positions, second fetch returns prices
+    mock_db.fetch.side_effect = [positions, prices]
     resp = await client.get("/portfolio/positions")
     assert resp.status_code == 200
     data = resp.json()

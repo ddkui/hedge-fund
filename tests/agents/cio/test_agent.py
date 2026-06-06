@@ -38,8 +38,9 @@ async def test_cio_publishes_directive_to_redis():
         MACRO_SIGNAL,
         RISK_EVENTS,
         CIO_OVERRIDES,
+        [],                # kronos_forecasts
     ])
-    agent.router.complete = AsyncMock(return_value=LLM_RESPONSE)
+    agent.router.chat = AsyncMock(return_value=LLM_RESPONSE)
 
     with patch("agents.cio.agent.settings"):
         await agent.run_once()
@@ -60,8 +61,9 @@ async def test_cio_writes_daily_brief_signal():
         MACRO_SIGNAL,
         RISK_EVENTS,
         CIO_OVERRIDES,
+        [],                # kronos_forecasts
     ])
-    agent.router.complete = AsyncMock(return_value=LLM_RESPONSE)
+    agent.router.chat = AsyncMock(return_value=LLM_RESPONSE)
 
     with patch("agents.cio.agent.settings"):
         await agent.run_once()
@@ -83,8 +85,9 @@ async def test_cio_handles_malformed_llm_response():
         MACRO_SIGNAL,
         RISK_EVENTS,
         CIO_OVERRIDES,
+        [],                # kronos_forecasts
     ])
-    agent.router.complete = AsyncMock(return_value="not valid json at all")
+    agent.router.chat = AsyncMock(return_value="not valid json at all")
 
     with patch("agents.cio.agent.settings"):
         await agent.run_once()

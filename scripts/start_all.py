@@ -3,15 +3,9 @@
 Launches all agent processes. Each agent runs as an independent subprocess.
 Add new agents to AGENTS list as they are built in subsequent phases.
 """
-import os
 import subprocess
 import sys
 import signal
-import certifi
-
-# Point all subprocesses at the certifi CA bundle so SSL works on Windows
-os.environ.setdefault("SSL_CERT_FILE", certifi.where())
-os.environ.setdefault("REQUESTS_CA_BUNDLE", certifi.where())
 
 AGENTS: list[str] = [
     # Phase 2: Data ingest
@@ -27,6 +21,7 @@ AGENTS: list[str] = [
     "agents/quant/momentum/main.py",
     "agents/quant/mean_reversion/main.py",
     "agents/quant/ml_quant/main.py",
+    "agents/quant/kronos/main.py",
     "agents/quant/supervisor/main.py",
     # Phase 4b: Portfolio execution layer
     "agents/portfolio_mgr/main.py",

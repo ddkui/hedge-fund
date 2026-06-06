@@ -144,6 +144,24 @@ CREATE INDEX IF NOT EXISTS idx_portfolio_state_time ON portfolio_state(time DESC
 CREATE INDEX IF NOT EXISTS idx_risk_events_time ON risk_events(time DESC);
 CREATE INDEX IF NOT EXISTS idx_risk_events_agent_time ON risk_events(agent, time DESC);
 
+CREATE TABLE IF NOT EXISTS kronos_forecasts (
+    id                  BIGSERIAL,
+    time                TIMESTAMPTZ NOT NULL,
+    symbol              TEXT NOT NULL,
+    model               TEXT NOT NULL DEFAULT 'NeoQuasar/Kronos-mini',
+    lookback_candles    INTEGER,
+    pred_horizon_candles INTEGER,
+    pred_close          DOUBLE PRECISION,
+    pred_change_pct     DOUBLE PRECISION,
+    signal_type         TEXT,
+    confidence          DOUBLE PRECISION,
+    pred_high           DOUBLE PRECISION,
+    pred_low            DOUBLE PRECISION,
+    reasoning           TEXT
+);
+SELECT create_hypertable('kronos_forecasts', 'time', if_not_exists => TRUE);
+CREATE INDEX IF NOT EXISTS kronos_forecasts_symbol_time ON kronos_forecasts (symbol, time DESC);
+
 CREATE OR REPLACE FUNCTION now_or_backtest()
 RETURNS timestamptz AS $$
   SELECT COALESCE(

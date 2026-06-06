@@ -38,7 +38,7 @@ class MemoryMixin:
             agent_dir = Path(self.obsidian_root) / self.name
             agent_dir.mkdir(parents=True, exist_ok=True)
 
-            safe_title = title[:50].replace(" ", "-").replace("/", "-").lower()
+            safe_title = title[:50].replace(" ", "-").replace("/", "-").replace(":", "-").lower()
             filename = f"{date_str}-{time_str}-{safe_title}.md"
             filepath = agent_dir / filename
 
