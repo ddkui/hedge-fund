@@ -1,29 +1,18 @@
 import asyncio
+import statistics
 from datetime import datetime, timezone
 from shared.agent_base import BaseAgent
 from shared.config import settings
-from shared.capital_com import CapitalComSession
+from shared.brokers.registry import BrokerRegistry
+from shared.brokers.base import BrokerFill
 
 
 class ExecutionAgent(BaseAgent):
-    # Shared Capital.com session — created on first use, reused across trades.
-    # Reset to None on failure so the next trade re-authenticates.
-    _capital_com_session: "CapitalComSession | None" = None
-
-    async def _get_capital_com_session(self) -> CapitalComSession:
-        if self._capital_com_session is None:
-            session = CapitalComSession(
-                base_url=settings.capital_com_base_url,
-                api_key=settings.capital_com_api_key,
-                identifier=settings.capital_com_identifier,
-                password=settings.capital_com_password,
-            )
-            await session.connect()
-            self._capital_com_session = session
-        return self._capital_com_session
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._registry = BrokerRegistry().load()
 
     async def run_once(self):
-        # Kill switch check — halt all trading if activated
         state = await self.bus.get("kill_switch_state")
         if state and state.get("halted"):
             self.logger.info("execution_halted_by_kill_switch")
@@ -35,138 +24,104 @@ class ExecutionAgent(BaseAgent):
         if not pending:
             return
 
-        state = await self.db.fetchrow(
+        port_state = await self.db.fetchrow(
             "SELECT cash, total_value, peak_value, open_positions FROM portfolio_state ORDER BY time DESC LIMIT 1"
         )
-        state_cash = float(state["cash"]) if state else settings.initial_capital
-        state_total = float(state["total_value"]) if state else settings.initial_capital
-        cash = state_cash
-        positions_value = state_total - state_cash
-        peak_value = float(state["peak_value"]) if state else settings.initial_capital
-        open_positions = int(state["open_positions"]) if state else 0
+        cash = float(port_state["cash"]) if port_state else settings.initial_capital
+        positions_value = (float(port_state["total_value"]) - cash) if port_state else 0.0
+        peak_value = float(port_state["peak_value"]) if port_state else settings.initial_capital
+        open_positions = int(port_state["open_positions"]) if port_state else 0
 
         for trade in pending:
-            fill_price = await self._get_fill_price(trade)
-            if fill_price is None:
+            fills = await self._fan_out(trade)
+            if not fills:
+                continue
+            fill_price = self._median_fill_price(fills, trade)
+            if fill_price is None or fill_price <= 0:
                 continue
             cash, positions_value, peak_value, open_positions = await self._apply_fill(
                 trade, fill_price, cash, positions_value, peak_value, open_positions
             )
+            await self._store_broker_fills(fills)
+            await self._alert_failures(trade, fills)
+            await self.bus.publish("trade.multi_fill", {
+                "trade_id": trade["id"],
+                "symbol": trade["symbol"],
+                "fills": [
+                    {"broker": f.broker_name, "status": f.status,
+                     "fill_price": f.fill_price, "error": f.error_msg}
+                    for f in fills
+                ],
+            })
 
-    async def _get_fill_price(self, trade) -> float | None:
+    async def _fan_out(self, trade: dict) -> list[BrokerFill]:
         if trade.get("paper", True) or settings.paper_trading:
             rows = await self.db.fetch(
                 "SELECT close FROM prices WHERE symbol = $1 ORDER BY time DESC LIMIT 1",
                 trade["symbol"],
             )
-            if not rows:
-                return None
-            return float(rows[0]["close"])
+            price = float(rows[0]["close"]) if rows else 0.0
+            return [BrokerFill(broker_name="paper", trade_id=trade["id"],
+                               status="filled", fill_price=price,
+                               fill_qty=float(trade["quantity"]), error_msg=None)]
 
-        broker = trade.get("broker", "paper")
-        if broker == "capital_com":
-            if not settings.capital_com_api_key:
-                await self._fail_trade(trade["id"], "capital_com broker selected but CAPITAL_COM_API_KEY is not configured")
-                return None
-            return await self._capital_com_fill(trade)
+        brokers = self._registry.get_all()
+        available = [b for b in brokers if await b.is_available()]
+        if not available:
+            self.logger.warning("no_brokers_available", trade_id=trade["id"])
+            return []
 
-        symbol = trade["symbol"]
-        if symbol.upper().endswith("USDT"):
-            return await self._binance_fill(trade)
-        return await self._alpaca_fill(trade)
-
-    async def _alpaca_fill(self, trade) -> float | None:
-        try:
-            from alpaca.trading.client import TradingClient
-            from alpaca.trading.requests import MarketOrderRequest
-            from alpaca.trading.enums import OrderSide, TimeInForce
-
-            client = TradingClient(settings.alpaca_api_key, settings.alpaca_secret_key, paper=False)
-            side = OrderSide.BUY if trade["action"] == "long" else OrderSide.SELL
-            req = MarketOrderRequest(symbol=trade["symbol"], qty=trade["quantity"], side=side, time_in_force=TimeInForce.DAY)
-            order = client.submit_order(req)
-            return float(order.filled_avg_price) if order.filled_avg_price else None
-        except Exception as exc:
-            self.logger.error("alpaca_fill_failed", symbol=trade["symbol"], error=str(exc))
-            await asyncio.sleep(2)
-            try:
-                client = TradingClient(settings.alpaca_api_key, settings.alpaca_secret_key, paper=False)
-                side = OrderSide.BUY if trade["action"] == "long" else OrderSide.SELL
-                req = MarketOrderRequest(symbol=trade["symbol"], qty=trade["quantity"], side=side, time_in_force=TimeInForce.DAY)
-                order = client.submit_order(req)
-                return float(order.filled_avg_price) if order.filled_avg_price else None
-            except Exception as exc2:
-                await self._fail_trade(trade["id"], str(exc2))
-                return None
-
-    async def _binance_fill(self, trade) -> float | None:
-        try:
-            from binance.client import Client
-            client = Client(settings.binance_api_key, settings.binance_secret_key)
-            side = "BUY" if trade["action"] == "long" else "SELL"
-            order = client.create_order(symbol=trade["symbol"], side=side, type="MARKET", quantity=trade["quantity"])
-            fills = order.get("fills", [])
-            return float(fills[0]["price"]) if fills else None
-        except Exception as exc:
-            self.logger.error("binance_fill_failed", symbol=trade["symbol"], error=str(exc))
-            await asyncio.sleep(2)
-            try:
-                client = Client(settings.binance_api_key, settings.binance_secret_key)
-                side = "BUY" if trade["action"] == "long" else "SELL"
-                order = client.create_order(symbol=trade["symbol"], side=side, type="MARKET", quantity=trade["quantity"])
-                fills = order.get("fills", [])
-                return float(fills[0]["price"]) if fills else None
-            except Exception as exc2:
-                await self._fail_trade(trade["id"], str(exc2))
-                return None
-
-    async def _capital_com_fill(self, trade) -> float | None:
-        direction = "SELL" if trade["action"] in ("close", "short") else "BUY"
-        # Capital.com applies leverage automatically to margin; size is units/contracts only.
-        size = float(trade["quantity"])
-
-        try:
-            session = await self._get_capital_com_session()
-            price = await session.place_order(trade["symbol"], direction, size)
-        except Exception as exc:
-            self.logger.error("capital_com_fill_failed", symbol=trade["symbol"], error=str(exc))
-            # Invalidate session so the next trade triggers a fresh authentication.
-            self._capital_com_session = None
-            await self._fail_trade(trade["id"], str(exc))
-            return None
-
-        if price is None:
-            await self._fail_trade(trade["id"], "capital_com place_order returned None")
-            return None
-
-        self.logger.info(
-            "capital_com_fill",
-            symbol=trade["symbol"],
-            direction=direction,
-            size=size,
-            price=price,
+        results = await asyncio.gather(
+            *[b.fill(trade) for b in available],
+            return_exceptions=True,
         )
-        return price
+        fills = []
+        for r in results:
+            if isinstance(r, BrokerFill):
+                fills.append(r)
+            elif isinstance(r, Exception):
+                self.logger.error("broker_fill_exception", error=str(r))
+        return fills
 
-    async def _apply_fill(
-        self,
-        trade,
-        fill_price: float,
-        cash: float,
-        positions_value: float,
-        peak_value: float,
-        open_positions: int,
-    ) -> tuple[float, float, float, int]:
+    def _median_fill_price(self, fills: list[BrokerFill], trade: dict) -> float | None:
+        prices = [f.fill_price for f in fills if f.fill_price is not None and f.fill_price > 0]
+        if not prices:
+            return None
+        return statistics.median(prices)
+
+    async def _store_broker_fills(self, fills: list[BrokerFill]) -> None:
+        for fill in fills:
+            await self.db.execute(
+                "INSERT INTO broker_fills (time, trade_id, broker_name, status, fill_price, fill_qty, error_msg) "
+                "VALUES ($1, $2, $3, $4, $5, $6, $7)",
+                fill.time, fill.trade_id, fill.broker_name, fill.status,
+                fill.fill_price, fill.fill_qty, fill.error_msg,
+            )
+
+    async def _alert_failures(self, trade: dict, fills: list[BrokerFill]) -> None:
+        failed = [f for f in fills if f.status in ("error", "rejected")]
+        for f in failed:
+            self.logger.warning("broker_fill_failed", broker=f.broker_name,
+                                trade_id=trade["id"], error=f.error_msg)
+            await self.bus.publish("ops.alert", {
+                "level": "warning",
+                "agent": "execution",
+                "message": f"Broker {f.broker_name} failed on trade {trade['id']}: {f.error_msg}",
+            })
+
+    async def _apply_fill(self, trade, fill_price, cash, positions_value, peak_value, open_positions):
         now = self._now()
         symbol = trade["symbol"]
         quantity = float(trade["quantity"])
         action = trade["action"]
         trade_value = quantity * fill_price
-        asset_class = trade.get("asset_class") or ("crypto" if trade["symbol"].upper().endswith("USDT") else "equity")
+        asset_class = trade.get("asset_class") or (
+            "crypto" if trade["symbol"].upper().endswith("USDT") else "equity"
+        )
 
         if action == "close":
             await self.db.execute(
-                "UPDATE positions SET exit_price = $1, exit_time = $2, status = $3 WHERE symbol = $4 AND status = 'open'",
+                "UPDATE positions SET exit_price=$1, exit_time=$2, status=$3 WHERE symbol=$4 AND status='open'",
                 fill_price, now, "closed", symbol,
             )
             positions_value = max(0.0, positions_value - trade_value)
@@ -174,7 +129,8 @@ class ExecutionAgent(BaseAgent):
             open_positions = max(0, open_positions - 1)
         else:
             await self.db.execute(
-                "INSERT INTO positions (symbol, asset_class, direction, quantity, entry_price, entry_time) VALUES ($1, $2, $3, $4, $5, $6)",
+                "INSERT INTO positions (symbol, asset_class, direction, quantity, entry_price, entry_time) "
+                "VALUES ($1,$2,$3,$4,$5,$6)",
                 symbol, asset_class, action, quantity, fill_price, now,
             )
             positions_value += trade_value
@@ -185,22 +141,28 @@ class ExecutionAgent(BaseAgent):
         peak_value = max(peak_value, total_value)
 
         await self.db.execute(
-            "INSERT INTO portfolio_state (time, cash, total_value, peak_value, open_positions) VALUES ($1, $2, $3, $4, $5)",
+            "INSERT INTO portfolio_state (time, cash, total_value, peak_value, open_positions) "
+            "VALUES ($1,$2,$3,$4,$5)",
             now, cash, total_value, peak_value, open_positions,
         )
-
         await self.db.execute(
-            "UPDATE trades SET status = $1, price = $2 WHERE id = $3",
+            "UPDATE trades SET status=$1, price=$2 WHERE id=$3",
             "executed", fill_price, trade["id"],
         )
 
-        self.logger.info("trade_executed", symbol=symbol, action=action, fill_price=fill_price, quantity=quantity)
+        await self.bus.publish("trade.executed", {
+            "trade_id": trade["id"], "symbol": symbol,
+            "action": action, "fill_price": fill_price, "quantity": quantity,
+        })
+        self.logger.info("trade_executed", symbol=symbol, action=action,
+                         fill_price=fill_price, quantity=quantity)
         return cash, positions_value, peak_value, open_positions
 
     async def _fail_trade(self, trade_id: int, error: str):
         now = self._now()
-        await self.db.execute("UPDATE trades SET status = $1 WHERE id = $2", "failed", trade_id)
+        await self.db.execute("UPDATE trades SET status=$1 WHERE id=$2", "failed", trade_id)
         await self.db.execute(
-            "INSERT INTO risk_events (time, agent, symbol, limit_type, details, action_taken) VALUES ($1,'execution',NULL,'broker_error',$2,'trade_failed')",
+            "INSERT INTO risk_events (time, agent, symbol, limit_type, details, action_taken) "
+            "VALUES ($1,'execution',NULL,'broker_error',$2,'trade_failed')",
             now, error,
         )

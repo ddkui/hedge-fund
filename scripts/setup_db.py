@@ -162,6 +162,19 @@ CREATE TABLE IF NOT EXISTS kronos_forecasts (
 SELECT create_hypertable('kronos_forecasts', 'time', if_not_exists => TRUE);
 CREATE INDEX IF NOT EXISTS kronos_forecasts_symbol_time ON kronos_forecasts (symbol, time DESC);
 
+CREATE TABLE IF NOT EXISTS broker_fills (
+    id              BIGSERIAL,
+    time            TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    trade_id        INTEGER REFERENCES trades(id),
+    broker_name     TEXT NOT NULL,
+    status          TEXT NOT NULL,
+    fill_price      DOUBLE PRECISION,
+    fill_qty        DOUBLE PRECISION,
+    error_msg       TEXT
+);
+CREATE INDEX IF NOT EXISTS broker_fills_trade_id ON broker_fills(trade_id);
+CREATE INDEX IF NOT EXISTS broker_fills_broker_time ON broker_fills(broker_name, time DESC);
+
 CREATE OR REPLACE FUNCTION now_or_backtest()
 RETURNS timestamptz AS $$
   SELECT COALESCE(

@@ -1,0 +1,28 @@
+# brokers.yaml
+# Managed by the execution agent. Add broker accounts here.
+# Every enabled broker receives a copy of each trade simultaneously.
+# ${VAR} references are resolved from environment variables.
+
+brokers:
+  - name: capital-main
+    type: capital_com
+    api_key: ${CAPITAL_COM_API_KEY}
+    identifier: ${CAPITAL_COM_IDENTIFIER}
+    password: ${CAPITAL_COM_PASSWORD}
+    base_url: ${CAPITAL_COM_BASE_URL}
+    enabled: true
+
+  - name: alpaca-paper
+    type: alpaca
+    api_key: ${ALPACA_API_KEY}
+    secret_key: ${ALPACA_SECRET_KEY}
+    paper: true
+    enabled: true
+
+  # Uncomment when IB Gateway/TWS is running locally:
+  # - name: ib-paper
+  #   type: ib
+  #   host: 127.0.0.1
+  #   port: 7497       # 7497=paper, 7496=live
+  #   client_id: 1
+  #   enabled: true

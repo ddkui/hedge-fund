@@ -99,140 +99,94 @@ async def test_execution_closes_position_on_close_trade():
 
 
 @pytest.mark.asyncio
-async def test_capital_com_fill_long_calls_place_order():
-    mock_settings, agent = make_agent(paper=False)
-    mock_settings.capital_com_api_key = "key"
-    mock_settings.capital_com_base_url = "https://demo-api-capital.backend.gbksoft.net"
-    mock_settings.capital_com_identifier = "test@example.com"
-    mock_settings.capital_com_password = "pass"
-
-    trade = {
-        "id": 10,
-        "symbol": "GOLD",
-        "action": "long",
-        "quantity": 2.0,
-        "paper": False,
-        "broker": "capital_com",
-        "asset_class": "commodities",
-    }
-
-    mock_session = AsyncMock()
-    mock_session.place_order = AsyncMock(return_value=1900.5)
-    # Inject shared session directly — no new CapitalComSession created per trade.
-    agent._capital_com_session = mock_session
-
+async def test_fan_out_paper_returns_price_fill():
+    """Paper trades go through price lookup, not real brokers."""
+    mock_settings, agent = make_agent(paper=True)
+    trade = {**PENDING_TRADE, "paper": True}
+    agent.db.fetch = AsyncMock(return_value=[{"close": 185.0}])
     with patch("agents.execution.agent.settings", mock_settings):
-        price = await agent._capital_com_fill(trade)
-
-    assert price == 1900.5
-    # Capital.com applies leverage automatically; size == quantity (no multiplication).
-    mock_session.place_order.assert_called_once_with("GOLD", "BUY", 2.0)
+        fills = await agent._fan_out(trade)
+    assert len(fills) == 1
+    assert fills[0].broker_name == "paper"
+    assert fills[0].fill_price == 185.0
+    assert fills[0].status == "filled"
 
 
 @pytest.mark.asyncio
-async def test_capital_com_fill_close_uses_sell_direction():
+async def test_fan_out_live_uses_registry():
+    """Live trades fan out to all available brokers."""
     mock_settings, agent = make_agent(paper=False)
-    mock_settings.capital_com_api_key = "key"
+    mock_settings.paper_trading = False
 
-    trade = {
-        "id": 11,
-        "symbol": "EURUSD",
-        "action": "close",
-        "quantity": 1.0,
-        "paper": False,
-        "broker": "capital_com",
-        "asset_class": "forex",
-    }
+    from shared.brokers.base import BrokerFill
+    mock_broker = AsyncMock()
+    mock_broker.is_available = AsyncMock(return_value=True)
+    mock_broker.fill = AsyncMock(return_value=BrokerFill(
+        broker_name="mock-broker", trade_id=1, status="filled",
+        fill_price=185.0, fill_qty=5.0, error_msg=None
+    ))
+    agent._registry._adapters = [mock_broker]
 
-    mock_session = AsyncMock()
-    mock_session.place_order = AsyncMock(return_value=1.0821)
-    agent._capital_com_session = mock_session
-
+    trade = {**PENDING_TRADE, "paper": False}
     with patch("agents.execution.agent.settings", mock_settings):
-        price = await agent._capital_com_fill(trade)
+        fills = await agent._fan_out(trade)
 
-    assert price == 1.0821
-    call_args = mock_session.place_order.call_args[0]
-    assert call_args[1] == "SELL"
+    assert len(fills) == 1
+    assert fills[0].broker_name == "mock-broker"
+    assert fills[0].fill_price == 185.0
 
 
 @pytest.mark.asyncio
-async def test_capital_com_fill_fails_trade_on_none():
-    """When place_order returns None, _fail_trade is called."""
+async def test_fan_out_continues_if_one_broker_fails():
+    """If one broker errors, others still execute."""
     mock_settings, agent = make_agent(paper=False)
-    mock_settings.capital_com_api_key = "key"
+    mock_settings.paper_trading = False
 
-    trade = {
-        "id": 12,
-        "symbol": "GOLD",
-        "action": "long",
-        "quantity": 1.0,
-        "paper": False,
-        "broker": "capital_com",
-        "asset_class": "commodities",
-    }
+    from shared.brokers.base import BrokerFill
+    good_broker = AsyncMock()
+    good_broker.is_available = AsyncMock(return_value=True)
+    good_broker.fill = AsyncMock(return_value=BrokerFill(
+        broker_name="good", trade_id=1, status="filled",
+        fill_price=185.0, fill_qty=5.0, error_msg=None
+    ))
+    bad_broker = AsyncMock()
+    bad_broker.is_available = AsyncMock(return_value=True)
+    bad_broker.fill = AsyncMock(side_effect=Exception("connection error"))
+    agent._registry._adapters = [good_broker, bad_broker]
+
+    trade = {**PENDING_TRADE, "paper": False}
+    with patch("agents.execution.agent.settings", mock_settings):
+        fills = await agent._fan_out(trade)
+
+    # Only the good broker's fill returned; bad broker exception is swallowed
+    assert len(fills) == 1
+    assert fills[0].broker_name == "good"
+
+
+def test_median_fill_price_uses_median():
+    """Median fill price is used when multiple brokers fill at different prices."""
+    mock_settings, agent = make_agent()
+    from shared.brokers.base import BrokerFill
+    fills = [
+        BrokerFill("a", 1, "filled", 184.0, 5.0, None),
+        BrokerFill("b", 1, "filled", 186.0, 5.0, None),
+        BrokerFill("c", 1, "filled", 185.0, 5.0, None),
+    ]
+    trade = {**PENDING_TRADE}
+    price = agent._median_fill_price(fills, trade)
+    assert price == 185.0
+
+
+@pytest.mark.asyncio
+async def test_store_broker_fills_writes_one_row_per_fill():
+    mock_settings, agent = make_agent()
     agent.db.execute = AsyncMock()
-
-    mock_session = AsyncMock()
-    mock_session.place_order = AsyncMock(return_value=None)
-    agent._capital_com_session = mock_session
-
-    with patch("agents.execution.agent.settings", mock_settings):
-        price = await agent._capital_com_fill(trade)
-
-    assert price is None
-    # _fail_trade makes 2 db.execute calls: UPDATE trades SET status='failed' + INSERT INTO risk_events
-    fail_calls = [c for c in agent.db.execute.call_args_list if "failed" in str(c)]
-    assert len(fail_calls) == 2
-
-
-@pytest.mark.asyncio
-async def test_capital_com_fill_resets_session_on_exception():
-    """On exception, shared session is invalidated so next trade re-authenticates."""
-    mock_settings, agent = make_agent(paper=False)
-    mock_settings.capital_com_api_key = "key"
-
-    trade = {
-        "id": 13,
-        "symbol": "GOLD",
-        "action": "long",
-        "quantity": 1.0,
-        "paper": False,
-        "broker": "capital_com",
-        "asset_class": "commodities",
-    }
-    agent.db.execute = AsyncMock()
-
-    mock_session = AsyncMock()
-    mock_session.place_order = AsyncMock(side_effect=Exception("connection reset"))
-    agent._capital_com_session = mock_session
-
-    with patch("agents.execution.agent.settings", mock_settings):
-        price = await agent._capital_com_fill(trade)
-
-    assert price is None
-    assert agent._capital_com_session is None  # session invalidated for next trade
-
-
-@pytest.mark.asyncio
-async def test_get_fill_price_routes_capital_com_trade():
-    """_get_fill_price routes broker='capital_com' to _capital_com_fill."""
-    mock_settings, agent = make_agent(paper=False)
-    mock_settings.capital_com_api_key = "key"
-
-    trade = {
-        "id": 20,
-        "symbol": "GOLD",
-        "action": "long",
-        "quantity": 1.0,
-        "paper": False,
-        "broker": "capital_com",
-        "asset_class": "commodities",
-    }
-
-    with patch("agents.execution.agent.settings", mock_settings), \
-         patch.object(agent, "_capital_com_fill", new_callable=AsyncMock, return_value=1900.0) as mock_fill:
-        price = await agent._get_fill_price(trade)
-
-    mock_fill.assert_called_once_with(trade)
-    assert price == 1900.0
+    from shared.brokers.base import BrokerFill
+    fills = [
+        BrokerFill("alpaca", 1, "filled", 185.0, 5.0, None),
+        BrokerFill("ib", 1, "filled", 185.5, 5.0, None),
+    ]
+    await agent._store_broker_fills(fills)
+    assert agent.db.execute.call_count == 2
+    sql = agent.db.execute.call_args_list[0][0][0]
+    assert "broker_fills" in sql
