@@ -18,6 +18,8 @@ services:
   redis:
     image: redis:7-alpine
     restart: unless-stopped
+    ports:
+      - "6379:6379"
     volumes:
       - redis_data:/data
     healthcheck:
@@ -33,6 +35,8 @@ services:
       POSTGRES_DB: ${DB_NAME:-hedgefund}
       POSTGRES_USER: ${DB_USER:-hedgefund}
       POSTGRES_PASSWORD: ${DB_PASSWORD:-changeme}
+    ports:
+      - "5432:5432"
     volumes:
       - tsdb_data:/var/lib/postgresql/data
     healthcheck:

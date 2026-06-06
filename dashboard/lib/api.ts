@@ -28,7 +28,7 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
 export const api = {
   portfolio: () => apiFetch<Portfolio>("/portfolio"),
   positions: () => apiFetch<Position[]>("/portfolio/positions"),
-  trades: (limit = 50) => apiFetch<Trade[]>(`/portfolio/trades?limit=${limit}`),
+  trades: (limit = 100) => apiFetch<Trade[]>(`/portfolio/trades?limit=${limit}`),
   pendingTrades: () => apiFetch<Trade[]>("/trades/pending"),
   approveTrade: (id: number) => apiFetch<{ id: number; status: string }>(`/trades/${id}/approve`, { method: "POST" }),
   denyTrade: (id: number) => apiFetch<{ id: number; status: string }>(`/trades/${id}/deny`, { method: "POST" }),
@@ -40,6 +40,10 @@ export const api = {
     method: "POST",
     body: JSON.stringify({ message }),
   }),
+  prices: (symbol: string, period: string, interval: string) =>
+    apiFetch<Candle[]>(`/prices/${symbol}?period=${period}&interval=${interval}`),
+  tradeMarkers: (symbol: string) =>
+    apiFetch<Trade[]>(`/portfolio/trades?limit=500`),
 };
 
 export interface Portfolio {
@@ -62,6 +66,9 @@ export interface Position {
   status: string;
   exit_price: number | null;
   exit_time: string | null;
+  current_price: number;
+  unrealized_pnl: number;
+  unrealized_pnl_pct: number;
 }
 
 export interface Trade {
@@ -104,4 +111,13 @@ export interface Algo {
   win_rate: number | null;
   trade_count: number | null;
   created_at: string;
+}
+
+export interface Candle {
+  time: number;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
 }
