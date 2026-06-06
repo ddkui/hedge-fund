@@ -34,3 +34,6 @@ class RedisBus:
     async def get(self, key: str) -> Any | None:
         val = await self._client.get(key)
         return json.loads(val) if val else None
+
+    async def delete(self, key: str):
+        await self._client.delete(key)

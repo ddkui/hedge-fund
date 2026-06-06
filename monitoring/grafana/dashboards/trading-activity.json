@@ -1,0 +1,30 @@
+{
+  "title": "Trading Activity",
+  "uid": "hf-trading",
+  "version": 1,
+  "schemaVersion": 36,
+  "refresh": "15s",
+  "panels": [
+    {
+      "type": "stat",
+      "title": "Pending Trades",
+      "gridPos": {"x":0,"y":0,"w":4,"h":4},
+      "targets": [{"expr": "hf_pending_trades_count", "legendFormat": "Pending"}],
+      "fieldConfig": {"defaults": {"color": {"mode": "thresholds"},
+        "thresholds": {"steps": [{"value": 0, "color": "green"}, {"value": 5, "color": "yellow"}, {"value": 10, "color": "red"}]}}}
+    },
+    {
+      "type": "timeseries",
+      "title": "Signals per Agent",
+      "gridPos": {"x":0,"y":4,"w":24,"h":8},
+      "targets": [{"expr": "rate(hf_signals_total[5m])", "legendFormat": "{{agent}}"}]
+    },
+    {
+      "type": "timeseries",
+      "title": "Trade Execution Rate",
+      "gridPos": {"x":0,"y":12,"w":24,"h":8},
+      "targets": [{"expr": "rate(hf_trades_total{status=\"executed\"}[5m])", "legendFormat": "Executed/s"}]
+    }
+  ],
+  "time": {"from": "now-6h", "to": "now"}
+}

@@ -70,6 +70,9 @@ class Settings(BaseSettings):
     gateway_port: int = 8000
     jwt_secret: str = "dev-secret-change-in-production"
     dashboard_password: str = "hedgefund2026"
+    allowed_login_emails: str = ""       # comma-separated allowlist; empty = allow all
+    otp_expiry_seconds: int = 600        # 10 minutes
+    grafana_password: str = "admin"
 
     @computed_field
     @property

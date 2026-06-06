@@ -1,0 +1,26 @@
+{
+  "title": "Agent Health",
+  "uid": "hf-agent-health",
+  "version": 1,
+  "schemaVersion": 36,
+  "refresh": "15s",
+  "panels": [
+    {
+      "type": "stat",
+      "title": "Agents Online",
+      "gridPos": {"x":0,"y":0,"w":4,"h":4},
+      "targets": [{"expr": "sum(hf_agent_up)", "legendFormat": "Online"}],
+      "options": {"colorMode": "value", "graphMode": "none"},
+      "fieldConfig": {"defaults": {"color": {"mode": "thresholds"},
+        "thresholds": {"steps": [{"value": 0, "color": "red"}, {"value": 10, "color": "green"}]}}}
+    },
+    {
+      "type": "table",
+      "title": "Agent Status",
+      "gridPos": {"x":4,"y":0,"w":20,"h":8},
+      "targets": [{"expr": "hf_agent_up", "legendFormat": "{{agent}}", "instant": true}],
+      "options": {"sortBy": [{"displayName": "Value", "desc": false}]}
+    }
+  ],
+  "time": {"from": "now-1h", "to": "now"}
+}

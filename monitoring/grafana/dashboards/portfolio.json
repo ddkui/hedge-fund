@@ -1,0 +1,46 @@
+{
+  "title": "Portfolio",
+  "uid": "hf-portfolio",
+  "version": 1,
+  "schemaVersion": 36,
+  "refresh": "30s",
+  "panels": [
+    {
+      "type": "gauge",
+      "title": "Portfolio Value",
+      "gridPos": {"x":0,"y":0,"w":6,"h":6},
+      "targets": [{"expr": "hf_portfolio_value_usd", "legendFormat": "Value"}],
+      "options": {"minVizWidth": 75},
+      "fieldConfig": {"defaults": {"unit": "currencyUSD",
+        "thresholds": {"steps": [{"value": 0, "color": "red"}, {"value": 100000, "color": "green"}]}}}
+    },
+    {
+      "type": "gauge",
+      "title": "Drawdown",
+      "gridPos": {"x":6,"y":0,"w":6,"h":6},
+      "targets": [{"expr": "hf_portfolio_drawdown_pct", "legendFormat": "Drawdown %"}],
+      "fieldConfig": {"defaults": {"unit": "percent",
+        "thresholds": {"steps": [{"value": 0, "color": "green"}, {"value": 10, "color": "yellow"}, {"value": 20, "color": "red"}]}}}
+    },
+    {
+      "type": "timeseries",
+      "title": "Portfolio Value Over Time",
+      "gridPos": {"x":0,"y":6,"w":24,"h":10},
+      "targets": [{"expr": "hf_portfolio_value_usd", "legendFormat": "Portfolio"}]
+    },
+    {
+      "type": "stat",
+      "title": "Open Positions",
+      "gridPos": {"x":12,"y":0,"w":6,"h":6},
+      "targets": [{"expr": "hf_open_positions_count", "legendFormat": "Positions"}]
+    },
+    {
+      "type": "stat",
+      "title": "Cash",
+      "gridPos": {"x":18,"y":0,"w":6,"h":6},
+      "targets": [{"expr": "hf_cash_usd", "legendFormat": "Cash"}],
+      "fieldConfig": {"defaults": {"unit": "currencyUSD"}}
+    }
+  ],
+  "time": {"from": "now-24h", "to": "now"}
+}
