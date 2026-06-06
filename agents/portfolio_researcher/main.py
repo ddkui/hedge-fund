@@ -1,5 +1,7 @@
 # agents/portfolio_researcher/main.py
 import asyncio
+import sys
+sys.path.insert(0, ".")
 from shared.db import Database
 from shared.bus import RedisBus
 from shared.config import settings

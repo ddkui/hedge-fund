@@ -72,10 +72,12 @@ class CIOAgent(MemoryMixin, AnalysisAgent):
             recent_signals=[dict(r) for r in all_signals[:30]],
         )
 
-        raw_response = await self.router.complete(
-            prompt=prompt,
-            model=settings.ollama_research_model,
-            system="You are a Chief Investment Officer. Respond only with a valid JSON array of directives.",
+        raw_response = await self.router.chat(
+            "cio",
+            [
+                {"role": "system", "content": "You are a Chief Investment Officer. Respond only with a valid JSON array of directives."},
+                {"role": "user", "content": prompt},
+            ],
         )
 
         directives = self._parse_directives(raw_response)

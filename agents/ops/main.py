@@ -6,7 +6,7 @@ from shared.config import settings
 from shared.bus import RedisBus
 from shared.db import Database
 from shared.model_router import ModelRouter
-from agents.ops.agent import OpsAgent
+from agents.ops.agent import EngineerAgent as OpsAgent
 
 
 async def main():
