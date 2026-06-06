@@ -96,3 +96,126 @@ async def test_execution_closes_position_on_close_trade():
     assert len(position_calls) == 1
     args = position_calls[0][0]
     assert "closed" in args
+
+
+@pytest.mark.asyncio
+async def test_capital_com_fill_long_calls_place_order():
+    mock_settings, agent = make_agent(paper=False)
+    mock_settings.capital_com_api_key = "key"
+    mock_settings.capital_com_base_url = "https://demo-api-capital.backend.gbksoft.net"
+    mock_settings.capital_com_identifier = "test@example.com"
+    mock_settings.capital_com_password = "pass"
+
+    trade = {
+        "id": 10,
+        "symbol": "GOLD",
+        "action": "long",
+        "quantity": 2.0,
+        "paper": False,
+        "broker": "capital_com",
+        "asset_class": "commodities",
+    }
+
+    mock_session = AsyncMock()
+    mock_session.connect = AsyncMock()
+    mock_session.place_order = AsyncMock(return_value=1900.5)
+    mock_session.disconnect = AsyncMock()
+
+    mock_capital_settings = MagicMock()
+    mock_capital_settings.capital_com_leverage_commodities = 5
+
+    with patch("agents.execution.agent.settings", mock_settings), \
+         patch("shared.capital_com.settings", mock_capital_settings), \
+         patch("agents.execution.agent.CapitalComSession", return_value=mock_session):
+        price = await agent._capital_com_fill(trade)
+
+    assert price == 1900.5
+    # commodities leverage = 5, effective_size = 2.0 * 5 = 10.0
+    mock_session.place_order.assert_called_once_with("GOLD", "BUY", 10.0)
+
+
+@pytest.mark.asyncio
+async def test_capital_com_fill_close_uses_sell_direction():
+    mock_settings, agent = make_agent(paper=False)
+    mock_settings.capital_com_api_key = "key"
+    mock_settings.capital_com_base_url = "https://demo-api-capital.backend.gbksoft.net"
+    mock_settings.capital_com_identifier = "test@example.com"
+    mock_settings.capital_com_password = "pass"
+
+    trade = {
+        "id": 11,
+        "symbol": "EURUSD",
+        "action": "close",
+        "quantity": 1.0,
+        "paper": False,
+        "broker": "capital_com",
+        "asset_class": "forex",
+    }
+
+    mock_session = AsyncMock()
+    mock_session.place_order = AsyncMock(return_value=1.0821)
+
+    with patch("agents.execution.agent.settings", mock_settings), \
+         patch("agents.execution.agent.CapitalComSession", return_value=mock_session):
+        price = await agent._capital_com_fill(trade)
+
+    assert price == 1.0821
+    call_args = mock_session.place_order.call_args[0]
+    assert call_args[1] == "SELL"
+
+
+@pytest.mark.asyncio
+async def test_capital_com_fill_fails_trade_on_none():
+    """When place_order returns None, _fail_trade is called."""
+    mock_settings, agent = make_agent(paper=False)
+    mock_settings.capital_com_api_key = "key"
+    mock_settings.capital_com_base_url = "https://demo-api-capital.backend.gbksoft.net"
+    mock_settings.capital_com_identifier = "test@example.com"
+    mock_settings.capital_com_password = "pass"
+
+    trade = {
+        "id": 12,
+        "symbol": "GOLD",
+        "action": "long",
+        "quantity": 1.0,
+        "paper": False,
+        "broker": "capital_com",
+        "asset_class": "commodities",
+    }
+    agent.db.execute = AsyncMock()
+
+    mock_session = AsyncMock()
+    mock_session.place_order = AsyncMock(return_value=None)
+
+    with patch("agents.execution.agent.settings", mock_settings), \
+         patch("agents.execution.agent.CapitalComSession", return_value=mock_session):
+        price = await agent._capital_com_fill(trade)
+
+    assert price is None
+    # _fail_trade makes 2 db.execute calls: UPDATE trades SET status='failed' + INSERT INTO risk_events
+    fail_calls = [c for c in agent.db.execute.call_args_list if "failed" in str(c)]
+    assert len(fail_calls) == 2
+
+
+@pytest.mark.asyncio
+async def test_get_fill_price_routes_capital_com_trade():
+    """_get_fill_price routes broker='capital_com' to _capital_com_fill."""
+    mock_settings, agent = make_agent(paper=False)
+    mock_settings.capital_com_api_key = "key"
+
+    trade = {
+        "id": 20,
+        "symbol": "GOLD",
+        "action": "long",
+        "quantity": 1.0,
+        "paper": False,
+        "broker": "capital_com",
+        "asset_class": "commodities",
+    }
+
+    with patch("agents.execution.agent.settings", mock_settings), \
+         patch.object(agent, "_capital_com_fill", new_callable=AsyncMock, return_value=1900.0) as mock_fill:
+        price = await agent._get_fill_price(trade)
+
+    mock_fill.assert_called_once_with(trade)
+    assert price == 1900.0

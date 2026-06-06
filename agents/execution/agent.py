@@ -2,6 +2,7 @@ import asyncio
 from datetime import datetime, timezone
 from shared.agent_base import BaseAgent
 from shared.config import settings
+from shared.capital_com import CapitalComSession, get_leverage
 
 
 class ExecutionAgent(BaseAgent):
@@ -13,7 +14,7 @@ class ExecutionAgent(BaseAgent):
             return
 
         pending = await self.db.fetch(
-            "SELECT id, symbol, action, quantity, paper FROM trades WHERE status = 'pending' ORDER BY time ASC"
+            "SELECT id, symbol, action, quantity, paper, broker, asset_class FROM trades WHERE status = 'pending' ORDER BY time ASC"
         )
         if not pending:
             return
@@ -45,6 +46,13 @@ class ExecutionAgent(BaseAgent):
             if not rows:
                 return None
             return float(rows[0]["close"])
+
+        broker = trade.get("broker", "paper")
+        if broker == "capital_com":
+            if not settings.capital_com_api_key:
+                await self._fail_trade(trade["id"], "capital_com broker selected but CAPITAL_COM_API_KEY is not configured")
+                return None
+            return await self._capital_com_fill(trade)
 
         symbol = trade["symbol"]
         if symbol.upper().endswith("USDT"):
@@ -96,6 +104,45 @@ class ExecutionAgent(BaseAgent):
                 await self._fail_trade(trade["id"], str(exc2))
                 return None
 
+    async def _capital_com_fill(self, trade) -> float | None:
+        direction = "SELL" if trade["action"] in ("close", "short") else "BUY"
+        asset_class = trade.get("asset_class", "shares")
+        leverage = get_leverage(asset_class)
+        effective_size = float(trade["quantity"]) * leverage
+
+        async def _attempt() -> float | None:
+            session = CapitalComSession(
+                base_url=settings.capital_com_base_url,
+                api_key=settings.capital_com_api_key,
+                identifier=settings.capital_com_identifier,
+                password=settings.capital_com_password,
+            )
+            try:
+                await session.connect()
+                return await session.place_order(trade["symbol"], direction, effective_size)
+            finally:
+                await session.disconnect()
+
+        try:
+            price = await _attempt()
+        except Exception as exc:
+            self.logger.error("capital_com_fill_failed", symbol=trade["symbol"], error=str(exc))
+            await self._fail_trade(trade["id"], str(exc))
+            return None
+
+        if price is None:
+            await self._fail_trade(trade["id"], "capital_com place_order returned None")
+            return None
+
+        self.logger.info(
+            "capital_com_fill",
+            symbol=trade["symbol"],
+            direction=direction,
+            size=effective_size,
+            price=price,
+        )
+        return price
+
     async def _apply_fill(
         self,
         trade,
@@ -110,7 +157,7 @@ class ExecutionAgent(BaseAgent):
         quantity = float(trade["quantity"])
         action = trade["action"]
         trade_value = quantity * fill_price
-        asset_class = "crypto" if trade["symbol"].upper().endswith("USDT") else "equity"
+        asset_class = trade.get("asset_class") or ("crypto" if trade["symbol"].upper().endswith("USDT") else "equity")
 
         if action == "close":
             await self.db.execute(

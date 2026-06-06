@@ -29,6 +29,8 @@ AGENTS: list[str] = [
     "agents/cio/main.py",
     "agents/ops/main.py",
     "agents/ops/notifications.py",
+    # Capital.com price feed (only active when CAPITAL_COM_API_KEY is set)
+    "agents/capital_feed/agent.py",
 ]
 
 processes: list[subprocess.Popen] = []
