@@ -191,6 +191,13 @@ class CapitalPriceFeed:
             f"{self.session.base_url}/api/v1/markets/{epic}",
             headers=self.session._auth_headers(),
         )
+        if resp.status_code == 401:
+            self.logger.warning("capital_feed_401_reauthing", epic=epic)
+            await self.session._authenticate()
+            resp = await client.get(
+                f"{self.session.base_url}/api/v1/markets/{epic}",
+                headers=self.session._auth_headers(),
+            )
         resp.raise_for_status()
         snap = resp.json()["snapshot"]
         bid = float(snap["bid"])

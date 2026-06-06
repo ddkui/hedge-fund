@@ -2,10 +2,26 @@ import asyncio
 from datetime import datetime, timezone
 from shared.agent_base import BaseAgent
 from shared.config import settings
-from shared.capital_com import CapitalComSession, get_leverage
+from shared.capital_com import CapitalComSession
 
 
 class ExecutionAgent(BaseAgent):
+    # Shared Capital.com session — created on first use, reused across trades.
+    # Reset to None on failure so the next trade re-authenticates.
+    _capital_com_session: "CapitalComSession | None" = None
+
+    async def _get_capital_com_session(self) -> CapitalComSession:
+        if self._capital_com_session is None:
+            session = CapitalComSession(
+                base_url=settings.capital_com_base_url,
+                api_key=settings.capital_com_api_key,
+                identifier=settings.capital_com_identifier,
+                password=settings.capital_com_password,
+            )
+            await session.connect()
+            self._capital_com_session = session
+        return self._capital_com_session
+
     async def run_once(self):
         # Kill switch check — halt all trading if activated
         state = await self.bus.get("kill_switch_state")
@@ -106,27 +122,16 @@ class ExecutionAgent(BaseAgent):
 
     async def _capital_com_fill(self, trade) -> float | None:
         direction = "SELL" if trade["action"] in ("close", "short") else "BUY"
-        asset_class = trade.get("asset_class", "shares")
-        leverage = get_leverage(asset_class)
-        effective_size = float(trade["quantity"]) * leverage
-
-        async def _attempt() -> float | None:
-            session = CapitalComSession(
-                base_url=settings.capital_com_base_url,
-                api_key=settings.capital_com_api_key,
-                identifier=settings.capital_com_identifier,
-                password=settings.capital_com_password,
-            )
-            try:
-                await session.connect()
-                return await session.place_order(trade["symbol"], direction, effective_size)
-            finally:
-                await session.disconnect()
+        # Capital.com applies leverage automatically to margin; size is units/contracts only.
+        size = float(trade["quantity"])
 
         try:
-            price = await _attempt()
+            session = await self._get_capital_com_session()
+            price = await session.place_order(trade["symbol"], direction, size)
         except Exception as exc:
             self.logger.error("capital_com_fill_failed", symbol=trade["symbol"], error=str(exc))
+            # Invalidate session so the next trade triggers a fresh authentication.
+            self._capital_com_session = None
             await self._fail_trade(trade["id"], str(exc))
             return None
 
@@ -138,7 +143,7 @@ class ExecutionAgent(BaseAgent):
             "capital_com_fill",
             symbol=trade["symbol"],
             direction=direction,
-            size=effective_size,
+            size=size,
             price=price,
         )
         return price

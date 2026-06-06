@@ -278,6 +278,39 @@ async def test_price_feed_upserts_tick_to_db():
 
 
 @pytest.mark.asyncio
+async def test_price_feed_reauths_on_401():
+    """On 401 from markets endpoint, session re-auths and retries the request."""
+    from shared.capital_com import CapitalPriceFeed
+    session = make_session()
+    session.cst = "old-cst"
+    session.security_token = "old-token"
+    db = AsyncMock()
+    feed = CapitalPriceFeed(session=session, db=db, epics=["GOLD"], interval_seconds=0)
+
+    unauth = MagicMock()
+    unauth.status_code = 401
+
+    ok_resp = mock_market_response(1899.0, 1901.0)
+
+    async def mock_reauth():
+        session.cst = "new-cst"
+        session.security_token = "new-token"
+
+    mock_client = AsyncMock()
+    mock_client.get = AsyncMock(side_effect=[unauth, ok_resp])
+
+    with patch.object(session, "_authenticate", side_effect=mock_reauth):
+        await feed._tick("GOLD", mock_client)
+
+    # Two GET calls: initial 401 + retry after re-auth
+    assert mock_client.get.call_count == 2
+    # Second call used refreshed tokens
+    second_headers = mock_client.get.call_args_list[1][1]["headers"]
+    assert second_headers["CST"] == "new-cst"
+    db.execute.assert_called_once()
+
+
+@pytest.mark.asyncio
 async def test_price_feed_reconnects_on_disconnect():
     """Per-epic errors are isolated: a single failing epic is logged but the cycle continues."""
     from shared.capital_com import CapitalPriceFeed

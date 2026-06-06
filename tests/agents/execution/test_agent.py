@@ -117,30 +117,22 @@ async def test_capital_com_fill_long_calls_place_order():
     }
 
     mock_session = AsyncMock()
-    mock_session.connect = AsyncMock()
     mock_session.place_order = AsyncMock(return_value=1900.5)
-    mock_session.disconnect = AsyncMock()
+    # Inject shared session directly — no new CapitalComSession created per trade.
+    agent._capital_com_session = mock_session
 
-    mock_capital_settings = MagicMock()
-    mock_capital_settings.capital_com_leverage_commodities = 5
-
-    with patch("agents.execution.agent.settings", mock_settings), \
-         patch("shared.capital_com.settings", mock_capital_settings), \
-         patch("agents.execution.agent.CapitalComSession", return_value=mock_session):
+    with patch("agents.execution.agent.settings", mock_settings):
         price = await agent._capital_com_fill(trade)
 
     assert price == 1900.5
-    # commodities leverage = 5, effective_size = 2.0 * 5 = 10.0
-    mock_session.place_order.assert_called_once_with("GOLD", "BUY", 10.0)
+    # Capital.com applies leverage automatically; size == quantity (no multiplication).
+    mock_session.place_order.assert_called_once_with("GOLD", "BUY", 2.0)
 
 
 @pytest.mark.asyncio
 async def test_capital_com_fill_close_uses_sell_direction():
     mock_settings, agent = make_agent(paper=False)
     mock_settings.capital_com_api_key = "key"
-    mock_settings.capital_com_base_url = "https://demo-api-capital.backend.gbksoft.net"
-    mock_settings.capital_com_identifier = "test@example.com"
-    mock_settings.capital_com_password = "pass"
 
     trade = {
         "id": 11,
@@ -154,9 +146,9 @@ async def test_capital_com_fill_close_uses_sell_direction():
 
     mock_session = AsyncMock()
     mock_session.place_order = AsyncMock(return_value=1.0821)
+    agent._capital_com_session = mock_session
 
-    with patch("agents.execution.agent.settings", mock_settings), \
-         patch("agents.execution.agent.CapitalComSession", return_value=mock_session):
+    with patch("agents.execution.agent.settings", mock_settings):
         price = await agent._capital_com_fill(trade)
 
     assert price == 1.0821
@@ -169,9 +161,6 @@ async def test_capital_com_fill_fails_trade_on_none():
     """When place_order returns None, _fail_trade is called."""
     mock_settings, agent = make_agent(paper=False)
     mock_settings.capital_com_api_key = "key"
-    mock_settings.capital_com_base_url = "https://demo-api-capital.backend.gbksoft.net"
-    mock_settings.capital_com_identifier = "test@example.com"
-    mock_settings.capital_com_password = "pass"
 
     trade = {
         "id": 12,
@@ -186,15 +175,43 @@ async def test_capital_com_fill_fails_trade_on_none():
 
     mock_session = AsyncMock()
     mock_session.place_order = AsyncMock(return_value=None)
+    agent._capital_com_session = mock_session
 
-    with patch("agents.execution.agent.settings", mock_settings), \
-         patch("agents.execution.agent.CapitalComSession", return_value=mock_session):
+    with patch("agents.execution.agent.settings", mock_settings):
         price = await agent._capital_com_fill(trade)
 
     assert price is None
     # _fail_trade makes 2 db.execute calls: UPDATE trades SET status='failed' + INSERT INTO risk_events
     fail_calls = [c for c in agent.db.execute.call_args_list if "failed" in str(c)]
     assert len(fail_calls) == 2
+
+
+@pytest.mark.asyncio
+async def test_capital_com_fill_resets_session_on_exception():
+    """On exception, shared session is invalidated so next trade re-authenticates."""
+    mock_settings, agent = make_agent(paper=False)
+    mock_settings.capital_com_api_key = "key"
+
+    trade = {
+        "id": 13,
+        "symbol": "GOLD",
+        "action": "long",
+        "quantity": 1.0,
+        "paper": False,
+        "broker": "capital_com",
+        "asset_class": "commodities",
+    }
+    agent.db.execute = AsyncMock()
+
+    mock_session = AsyncMock()
+    mock_session.place_order = AsyncMock(side_effect=Exception("connection reset"))
+    agent._capital_com_session = mock_session
+
+    with patch("agents.execution.agent.settings", mock_settings):
+        price = await agent._capital_com_fill(trade)
+
+    assert price is None
+    assert agent._capital_com_session is None  # session invalidated for next trade
 
 
 @pytest.mark.asyncio
