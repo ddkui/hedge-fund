@@ -35,7 +35,7 @@ def mock_position_response(deal_ref="DEAL123"):
 def mock_confirm_response(level=1900.5):
     resp = MagicMock()
     resp.status_code = 200
-    resp.json.return_value = {"status": "ACCEPTED", "level": level}
+    resp.json.return_value = {"dealStatus": "ACCEPTED", "level": level}
     return resp
 
 
@@ -193,6 +193,34 @@ async def test_capital_fill_retries_on_failure():
         price = await session.place_order("GOLD", "BUY", 1.0)
 
     assert price == 1910.0
+
+
+@pytest.mark.asyncio
+async def test_capital_fill_rejected_deal_raises():
+    """If Capital.com confirms the order but dealStatus != ACCEPTED, raise ValueError."""
+    session = make_session()
+    session.cst = "cst"
+    session.security_token = "sec"
+
+    rejected_confirm = MagicMock()
+    rejected_confirm.status_code = 200
+    rejected_confirm.raise_for_status = MagicMock()
+    rejected_confirm.json.return_value = {"dealStatus": "REJECTED", "rejectReason": "INSUFFICIENT_FUNDS", "level": 0}
+
+    with patch("shared.capital_com.httpx.AsyncClient") as mock_client_cls, \
+         patch("shared.capital_com.asyncio.sleep", new_callable=AsyncMock):
+
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=None)
+        mock_client.post = AsyncMock(return_value=mock_position_response("REF_REJ"))
+        mock_client.get = AsyncMock(return_value=rejected_confirm)
+        mock_client_cls.return_value = mock_client
+
+        price = await session.place_order("GOLD", "BUY", 1.0)
+
+    # Both attempts see REJECTED → place_order returns None
+    assert price is None
 
 
 @pytest.mark.asyncio

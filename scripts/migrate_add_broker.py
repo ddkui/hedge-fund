@@ -20,10 +20,6 @@ END $$;
 
 
 async def main():
-    if not settings.db_dsn:
-        print("ERROR: DB_DSN not configured")
-        sys.exit(1)
-
     print("Connecting to TimescaleDB...")
     conn = None
     try:
