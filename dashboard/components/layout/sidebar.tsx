@@ -4,15 +4,17 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   LayoutDashboard, Cpu, BarChart2, Activity,
-  FlaskConical, Server, MessageSquare
+  FlaskConical, Server, MessageSquare, ArrowLeftRight, BrainCircuit
 } from "lucide-react";
 
 const NAV = [
   { href: "/overview",   label: "Overview",   icon: LayoutDashboard },
+  { href: "/trades",     label: "Trades",     icon: ArrowLeftRight },
   { href: "/consensus",  label: "Consensus",  icon: Cpu },
   { href: "/terminal",   label: "Terminal",   icon: BarChart2 },
   { href: "/activity",   label: "AI Activity",icon: Activity },
   { href: "/quant",      label: "Quant Lab",  icon: FlaskConical },
+  { href: "/kronos",     label: "Kronos AI",  icon: BrainCircuit },
   { href: "/ops",        label: "Operations", icon: Server },
   { href: "/chat",       label: "CIO Chat",   icon: MessageSquare },
 ];
