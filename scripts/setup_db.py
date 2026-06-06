@@ -175,6 +175,49 @@ CREATE TABLE IF NOT EXISTS broker_fills (
 CREATE INDEX IF NOT EXISTS broker_fills_trade_id ON broker_fills(trade_id);
 CREATE INDEX IF NOT EXISTS broker_fills_broker_time ON broker_fills(broker_name, time DESC);
 
+CREATE TABLE IF NOT EXISTS signal_outcomes (
+    id              BIGSERIAL PRIMARY KEY,
+    time            TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    agent           TEXT NOT NULL,
+    symbol          TEXT,
+    signal_type     TEXT NOT NULL,
+    confidence      DOUBLE PRECISION,
+    regime          TEXT NOT NULL DEFAULT 'unknown',
+    entry_price     DOUBLE PRECISION,
+    exit_price      DOUBLE PRECISION,
+    pnl             DOUBLE PRECISION,
+    was_correct     BOOLEAN,
+    horizon_candles INTEGER
+);
+CREATE INDEX IF NOT EXISTS signal_outcomes_agent_regime ON signal_outcomes(agent, regime, time DESC);
+
+CREATE TABLE IF NOT EXISTS optimizer_proposals (
+    id              BIGSERIAL PRIMARY KEY,
+    time            TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    agent           TEXT NOT NULL,
+    regime          TEXT NOT NULL,
+    param_name      TEXT NOT NULL,
+    current_value   DOUBLE PRECISION,
+    proposed_value  DOUBLE PRECISION,
+    change_pct      DOUBLE PRECISION,
+    reason          TEXT,
+    status          TEXT NOT NULL DEFAULT 'pending',
+    reviewed_at     TIMESTAMPTZ,
+    reviewed_by     TEXT
+);
+
+CREATE TABLE IF NOT EXISTS optimizer_history (
+    id              BIGSERIAL PRIMARY KEY,
+    time            TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    agent           TEXT,
+    regime          TEXT,
+    param_name      TEXT,
+    old_value       DOUBLE PRECISION,
+    new_value       DOUBLE PRECISION,
+    reason          TEXT,
+    auto_applied    BOOLEAN DEFAULT TRUE
+);
+
 CREATE OR REPLACE FUNCTION now_or_backtest()
 RETURNS timestamptz AS $$
   SELECT COALESCE(

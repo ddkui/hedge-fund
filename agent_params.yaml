@@ -1,0 +1,131 @@
+# agent_params.yaml
+# Managed by AgentOptimizer. Do not edit manually while agents are running.
+
+_meta:
+  last_updated: "2026-06-06T00:00:00Z"
+  optimizer_version: 1
+  alpha_tier: learning
+
+news_momentum:
+  _default: &nm_default
+    sentiment_weight: 0.40
+    momentum_weight: 0.60
+    composite_threshold: 1.0
+    momentum_lookback: 20
+    sentiment_lookback_hours: 2
+  expansion: *nm_default
+  contraction:
+    sentiment_weight: 0.60
+    momentum_weight: 0.40
+    composite_threshold: 2.0
+    momentum_lookback: 20
+    sentiment_lookback_hours: 2
+  crisis:
+    sentiment_weight: 0.70
+    momentum_weight: 0.30
+    composite_threshold: 3.0
+    momentum_lookback: 10
+    sentiment_lookback_hours: 1
+  pandemic:
+    sentiment_weight: 0.80
+    momentum_weight: 0.20
+    composite_threshold: 4.0
+    momentum_lookback: 5
+    sentiment_lookback_hours: 1
+  stagflation: *nm_default
+  hiking_cycle: *nm_default
+  cutting_cycle: *nm_default
+
+vwap:
+  _default: &vwap_default
+    deviation_threshold_pct: 1.5
+    min_candles: 5
+    crypto_window_hours: 24
+  expansion: *vwap_default
+  contraction:
+    deviation_threshold_pct: 2.5
+    min_candles: 10
+    crypto_window_hours: 24
+  crisis:
+    deviation_threshold_pct: 4.0
+    min_candles: 15
+    crypto_window_hours: 12
+  pandemic:
+    deviation_threshold_pct: 5.0
+    min_candles: 20
+    crypto_window_hours: 6
+  stagflation: *vwap_default
+  hiking_cycle: *vwap_default
+  cutting_cycle: *vwap_default
+
+supply_demand:
+  _default: &sd_default
+    lookback: 120
+    pivot_window: 3
+    zone_proximity_pct: 0.5
+    min_zone_strength_pct: 1.5
+    max_zones: 6
+  expansion: *sd_default
+  contraction:
+    lookback: 120
+    pivot_window: 3
+    zone_proximity_pct: 0.4
+    min_zone_strength_pct: 2.5
+    max_zones: 6
+  crisis:
+    lookback: 90
+    pivot_window: 2
+    zone_proximity_pct: 0.3
+    min_zone_strength_pct: 4.0
+    max_zones: 4
+  pandemic:
+    lookback: 60
+    pivot_window: 2
+    zone_proximity_pct: 0.3
+    min_zone_strength_pct: 5.0
+    max_zones: 3
+  stagflation: *sd_default
+  hiking_cycle: *sd_default
+  cutting_cycle: *sd_default
+
+aggregator:
+  _default:
+    agent_weights:
+      technical: 1.0
+      sentiment: 1.0
+      macro: 1.0
+      research: 1.0
+      news_momentum: 1.0
+      vwap: 1.0
+      supply_demand: 1.0
+      kronos: 1.0
+  expansion:
+    agent_weights:
+      technical: 1.0
+      sentiment: 1.0
+      macro: 1.0
+      research: 1.0
+      news_momentum: 1.0
+      vwap: 1.0
+      supply_demand: 1.0
+      kronos: 1.0
+  crisis:
+    agent_weights:
+      technical: 0.5
+      sentiment: 1.5
+      macro: 2.0
+      research: 0.8
+      news_momentum: 1.0
+      vwap: 0.3
+      supply_demand: 0.8
+      kronos: 1.2
+  pandemic:
+    agent_weights:
+      technical: 0.3
+      sentiment: 2.0
+      macro: 2.5
+      research: 1.0
+      news_momentum: 0.8
+      vwap: 0.2
+      supply_demand: 0.6
+      kronos: 1.5
