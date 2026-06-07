@@ -21,6 +21,10 @@ class ComplianceResult:
         """Support dict-style access for backward compatibility with tests."""
         return getattr(self, key)
 
+    def get(self, key: str, default=None):
+        """Dict-style .get() method for backward compatibility."""
+        return getattr(self, key, default)
+
 
 class ComplianceChecker:
     """Validates trades against SEC rules, PDT, and position limits."""
@@ -69,27 +73,20 @@ class ComplianceChecker:
         Returns:
             ComplianceResult with passes=True if all checks pass, violations list if any fail
         """
+        # Input validation (Critical Bug #3)
+        if portfolio_value <= 0:
+            raise ValueError("portfolio_value must be positive")
+        if quantity < 0:
+            raise ValueError("quantity must be non-negative")
+        if price < 0:
+            raise ValueError("price must be non-negative")
+        if action not in ("BUY", "SELL"):
+            raise ValueError("action must be BUY or SELL")
+
         violations = []
         warnings = []
 
-        # Rule 1: Position size limit (25% of portfolio per position)
-        notional = quantity * price
-        max_allowed = portfolio_value * self.max_position_pct
-
-        if action == "BUY":
-            new_position = (current_position_qty + quantity) * price
-        else:
-            new_position = max(0, current_position_qty - quantity) * price
-
-        if new_position > max_allowed and action == "BUY":
-            violations.append("position_limit")
-            return ComplianceResult(
-                passes=False,
-                violations=violations,
-                max_allowed_notional=max_allowed,
-            )
-
-        # Rule 2: Pattern Day Trader (PDT) rule
+        # Rule 2: Pattern Day Trader (PDT) rule - CHECK FIRST (takes precedence)
         if portfolio_value < self.pdt_min and day_trades_today >= 3:
             # Buying to close or opening a new position would be 4th day trade
             if action == "BUY" or (action == "SELL" and current_position_qty > 0):
@@ -100,18 +97,37 @@ class ComplianceChecker:
                     pdt_day_trades=day_trades_today + 1,
                 )
 
+        # Rule 1: Position size limit (25% of portfolio per position) - Critical Bug #2
+        # Calculate new position notional value
+        if action == "BUY":
+            new_position_notional = (current_position_qty + quantity) * price
+        else:
+            new_position_notional = max(0, current_position_qty - quantity) * price
+
+        # Check as percentage of portfolio
+        new_position_pct = new_position_notional / portfolio_value
+
+        if new_position_pct > self.max_position_pct and action == "BUY":
+            violations.append("position_limit")
+            return ComplianceResult(
+                passes=False,
+                violations=violations,
+                max_allowed_notional=portfolio_value * self.max_position_pct,
+            )
+
         # Rule 3: Short-sale uptick rule (can't short unless price >= last price)
         if action == "SELL" and current_position_qty == 0:  # Going short
             if last_short_price is not None and price < last_short_price:
                 violations.append("short_sale_uptick")
                 return ComplianceResult(passes=False, violations=violations)
 
-        # Rule 4: Concentration warning (15% single position limit)
-        concentration_pct = new_position / portfolio_value if action == "BUY" else 0
-        if concentration_pct > 0.15:
-            result_obj = ComplianceResult(passes=True)
-            result_obj.warnings = ["concentration_warning"]
-            return result_obj
+        # Rule 4: Concentration warning (15% single position limit) - Critical Bug #4
+        if action == "BUY":
+            concentration_pct = new_position_notional / portfolio_value
+            if concentration_pct > 0.15:
+                result_obj = ComplianceResult(passes=True)
+                result_obj.warnings = ["concentration_warning"]
+                return result_obj
 
         # If all checks pass
         return ComplianceResult(passes=True)

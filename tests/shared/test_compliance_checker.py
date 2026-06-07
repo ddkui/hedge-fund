@@ -68,11 +68,13 @@ def test_position_limit_exceeds_max():
     """Test: reject trade if position would exceed max size (25% portfolio)."""
     checker = ComplianceChecker()
 
-    # Scenario: portfolio = $1M, trade = 300k shares at $100 = $30M (30% > 25% limit)
+    # Scenario: portfolio = $1M, trade = 300 shares at $100 = $30k (3% of $1M)
+    # To exceed 25% limit with $1M portfolio and $100/share: need >250k shares
+    # So use 300k shares: 300k * $100 = $30M (30% > 25% limit)
     result = checker.check_trade(
         symbol="AAPL",
         quantity=300000,
-        price=100.0,
+        price=1.0,  # Changed: lower price so notional is realistic
         action="BUY",
         portfolio_value=1_000_000,
         current_position_qty=0,
@@ -88,10 +90,10 @@ def test_position_limit_within_bounds():
     """Test: allow trade if position stays within 25% limit."""
     checker = ComplianceChecker()
 
-    # Trade: 200k shares at $100 = $20M (20% of $1M portfolio)
+    # Trade: 200 shares at $100 = $20k (2% of $1M portfolio, well within 25% limit)
     result = checker.check_trade(
         symbol="AAPL",
-        quantity=200000,
+        quantity=200,
         price=100.0,
         action="BUY",
         portfolio_value=1_000_000,
@@ -172,12 +174,13 @@ class TestPositionLimitEdgeCases:
     def test_position_at_exactly_25_percent(self):
         """Should allow position at exactly 25% limit."""
         checker = ComplianceChecker()
+        # 250 shares at $100 = $25k (25% of $100k portfolio)
         result = checker.check_trade(
             symbol="AAPL",
-            quantity=250000,
+            quantity=250,
             price=100.0,
             action="BUY",
-            portfolio_value=1_000_000,
+            portfolio_value=100_000,
             current_position_qty=0,
             broker_limits={},
         )
@@ -220,10 +223,11 @@ class TestPDTEdgeCases:
     def test_pdt_not_triggered_with_25k_account(self):
         """Should allow 4th day trade with $25k+ account."""
         checker = ComplianceChecker()
+        # 20 shares at $50 = $1k (4% of $25k portfolio, well within limits)
         result = checker.check_trade(
             symbol="AAPL",
-            quantity=100,
-            price=150.0,
+            quantity=20,
+            price=50.0,
             action="BUY",
             portfolio_value=25_000,  # Exactly at minimum
             current_position_qty=0,
@@ -251,10 +255,11 @@ class TestPDTEdgeCases:
     def test_pdt_not_triggered_with_only_3_day_trades(self):
         """Should allow 3rd day trade even on small account."""
         checker = ComplianceChecker()
+        # 20 shares at $40 = $800 (8% of $10k portfolio, within 25% limit)
         result = checker.check_trade(
             symbol="AAPL",
-            quantity=100,
-            price=150.0,
+            quantity=20,
+            price=40.0,
             action="BUY",
             portfolio_value=10_000,
             current_position_qty=0,
