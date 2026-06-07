@@ -110,12 +110,22 @@ class TaxCalculator:
         """Record a sale for wash-sale tracking."""
         gain = self.calculate_gain_on_sale(symbol, quantity, sale_price)
 
+        # Get the purchase date for this sale (FIFO - oldest lot)
+        purchase_date = None
+        if symbol in self.lots and self.lots[symbol]:
+            lots_to_sell = self.lots[symbol].copy()
+            if self.method == CostBasisMethod.FIFO:
+                lots_to_sell.sort(key=lambda x: x.purchase_date)
+            if lots_to_sell:
+                purchase_date = lots_to_sell[0].purchase_date
+
         self.sales.append({
             "symbol": symbol,
             "quantity": quantity,
             "sale_price": sale_price,
             "sale_date": sale_date,
             "gain": gain,
+            "purchase_date": purchase_date,
         })
 
         # Remove sold lots
