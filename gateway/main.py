@@ -7,7 +7,7 @@ from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 
 from gateway import deps
-from gateway.routers import portfolio, signals, agents, backtests, trades, chat, prices, auth as auth_router, kronos as kronos_router, analytics as analytics_router, brokers as brokers_router, intelligence as intelligence_router
+from gateway.routers import portfolio, signals, agents, backtests, trades, chat, prices, auth as auth_router, kronos as kronos_router, analytics as analytics_router, brokers as brokers_router, intelligence as intelligence_router, compliance as compliance_router
 from gateway.routers.metrics import router as metrics_router
 from gateway.ws_manager import router as ws_router
 
@@ -57,6 +57,7 @@ app.include_router(chat.router, prefix="/chat", tags=["chat"])
 app.include_router(prices.router, prefix="/prices", tags=["prices"])
 app.include_router(kronos_router.router, prefix="/kronos", tags=["kronos"])
 app.include_router(analytics_router.router, prefix="/analytics", tags=["analytics"])
+app.include_router(compliance_router.router)
 app.include_router(metrics_router)
 app.include_router(brokers_router.router, prefix="/brokers", tags=["brokers"])
 app.include_router(intelligence_router.router, prefix="/intelligence", tags=["intelligence"])
