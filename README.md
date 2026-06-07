@@ -228,9 +228,9 @@ USER → /login → Google OAuth button
     Redirect to /overview
 ```
 
-Allowed users from `.env`:
+Allowed users from `.env` (see .env.example):
 ```
-ALLOWED_LOGIN_EMAILS=dannjeru555@gmail.com,skaguima4@gmail.com
+ALLOWED_LOGIN_EMAILS=your-email@example.com,other-investor@example.com
 ```
 
 ---
