@@ -3,22 +3,19 @@
 Pre-trade compliance checker for SEC regulations, PDT rules, and risk limits.
 Used by gateway to validate trades before execution.
 """
-from dataclasses import dataclass
-from typing import Optional, Dict
+from dataclasses import dataclass, field
+from typing import Optional, Dict, Any, List
 
 
 @dataclass
 class ComplianceResult:
     """Result of a compliance check with full details."""
     passes: bool
-    violations: list[str]
-    warnings: list[str] = None
-    checked_at: str = None
-
-    def __post_init__(self):
-        """Initialize warnings list if not provided."""
-        if self.warnings is None:
-            self.warnings = []
+    violations: List[str] = field(default_factory=list)
+    warnings: List[str] = field(default_factory=list)
+    max_allowed_notional: Optional[float] = None
+    pdt_day_trades: int = 0
+    short_positions: Dict[str, int] = field(default_factory=dict)
 
     def __getitem__(self, key: str):
         """Support dict-style access for backward compatibility with tests."""
@@ -28,30 +25,46 @@ class ComplianceResult:
 class ComplianceChecker:
     """Validates trades against SEC rules, PDT, and position limits."""
 
-    def __init__(self):
-        pass
+    def __init__(
+        self,
+        max_position_pct: float = 0.25,
+        pdt_min_account_value: float = 25000.0,
+    ):
+        """
+        Initialize compliance checker.
+
+        Args:
+            max_position_pct: Maximum position as % of portfolio (default 25%)
+            pdt_min_account_value: Minimum account value for PDT ($25k)
+        """
+        self.max_position_pct = max_position_pct
+        self.pdt_min = pdt_min_account_value
 
     def check_trade(
         self,
         symbol: str,
-        action: str,  # "long" or "short"
-        quantity: float,
-        position_limit_pct: float = 0.05,
+        quantity: int,
+        price: float,
+        action: str,  # "BUY" or "SELL"
+        portfolio_value: float,
+        current_position_qty: int,
+        broker_limits: Dict[str, Any],
         day_trades_today: int = 0,
         last_short_price: Optional[float] = None,
-        broker_limits: Optional[Dict] = None,
     ) -> ComplianceResult:
         """
         Check trade against compliance rules.
 
         Args:
             symbol: Stock symbol (e.g., "AAPL")
-            action: Trade direction ("long" or "short")
             quantity: Number of shares
-            position_limit_pct: Max position as % of portfolio (default 5%)
+            price: Price per share
+            action: Trade direction ("BUY" or "SELL")
+            portfolio_value: Total portfolio value in dollars
+            current_position_qty: Current position quantity for this symbol
+            broker_limits: Dict of broker-specific limits
             day_trades_today: Count of day trades executed today (0-3+)
             last_short_price: Price at which last short was opened (for short selling)
-            broker_limits: Dict of broker-specific limits (reserved for future use)
 
         Returns:
             ComplianceResult with passes=True if all checks pass, violations list if any fail
@@ -59,131 +72,46 @@ class ComplianceChecker:
         violations = []
         warnings = []
 
-        # 1. Quantity check
-        if quantity <= 0:
-            violations.append("Quantity must be positive")
+        # Rule 1: Position size limit (25% of portfolio per position)
+        notional = quantity * price
+        max_allowed = portfolio_value * self.max_position_pct
 
-        if quantity > 10000:
-            violations.append("Quantity exceeds max shares per trade (10000)")
+        if action == "BUY":
+            new_position = (current_position_qty + quantity) * price
+        else:
+            new_position = max(0, current_position_qty - quantity) * price
 
-        # 2. Symbol check
-        if not symbol or len(symbol) > 5 or not symbol.isupper():
-            violations.append("Invalid symbol format")
+        if new_position > max_allowed and action == "BUY":
+            violations.append("position_limit")
+            return ComplianceResult(
+                passes=False,
+                violations=violations,
+                max_allowed_notional=max_allowed,
+            )
 
-        # 3. Action check
-        if action not in ["long", "short"]:
-            violations.append("Action must be 'long' or 'short'")
-
-        # 4. Short selling restrictions (Rule 10a-1)
-        if action == "short":
-            if last_short_price is None:
-                # Simplified check: We need price context for proper uptick rule
-                warnings.append("Short sale without previous price reference")
-            # Note: Uptick rule enforcement requires real-time tick data
-
-        # 5. Pattern Day Trading rule (PDT)
-        if day_trades_today >= 4:
-            violations.append(f"PDT rule violated: {day_trades_today} day trades already executed today (limit 3)")
-
-        # 6. Position limit check
-        # Note: Actual position sizing relative to portfolio is checked by RiskChecker
-        # This just validates the percentage parameter is reasonable
-        if position_limit_pct < 0.01 or position_limit_pct > 0.50:
-            warnings.append(f"Position limit {position_limit_pct*100}% is unusual (typical: 1-50%)")
-
-        # Prepare result
-        passes = len(violations) == 0
-
-        return ComplianceResult(
-            passes=passes,
-            violations=violations,
-            warnings=warnings,
-        )
-
-    def check_short_sale(
-        self,
-        symbol: str,
-        quantity: float,
-        current_price: float,
-        last_short_price: Optional[float] = None,
-    ) -> ComplianceResult:
-        """
-        Check short sale against uptick rule and other short-selling restrictions.
-
-        Args:
-            symbol: Stock symbol
-            quantity: Shares to short
-            current_price: Current market price
-            last_short_price: Price at which the last short was executed
-
-        Returns:
-            ComplianceResult with violations if uptick rule violated
-        """
-        violations = []
-        warnings = []
-
-        if quantity <= 0:
-            violations.append("Short quantity must be positive")
-
-        if symbol and (len(symbol) > 5 or not symbol.isupper()):
-            violations.append("Invalid symbol")
-
-        # Uptick rule: short must be at price >= last short price (simplified)
-        # In real implementation, would check against last regular sale price
-        if last_short_price is not None:
-            if current_price < last_short_price * 0.99:  # Allow 1% tolerance
-                violations.append(
-                    f"Uptick rule: short price {current_price} below last short {last_short_price}"
+        # Rule 2: Pattern Day Trader (PDT) rule
+        if portfolio_value < self.pdt_min and day_trades_today >= 3:
+            # Buying to close or opening a new position would be 4th day trade
+            if action == "BUY" or (action == "SELL" and current_position_qty > 0):
+                violations.append("pdt_violation")
+                return ComplianceResult(
+                    passes=False,
+                    violations=violations,
+                    pdt_day_trades=day_trades_today + 1,
                 )
 
-        passes = len(violations) == 0
+        # Rule 3: Short-sale uptick rule (can't short unless price >= last price)
+        if action == "SELL" and current_position_qty == 0:  # Going short
+            if last_short_price is not None and price < last_short_price:
+                violations.append("short_sale_uptick")
+                return ComplianceResult(passes=False, violations=violations)
 
-        return ComplianceResult(
-            passes=passes,
-            violations=violations,
-            warnings=warnings,
-        )
+        # Rule 4: Concentration warning (15% single position limit)
+        concentration_pct = new_position / portfolio_value if action == "BUY" else 0
+        if concentration_pct > 0.15:
+            result_obj = ComplianceResult(passes=True)
+            result_obj.warnings = ["concentration_warning"]
+            return result_obj
 
-    def check_pdt_status(
-        self,
-        account_type: str,  # "margin" or "cash"
-        equity: float,
-        day_trades_count: int,
-    ) -> ComplianceResult:
-        """
-        Check Pattern Day Trader (PDT) status and restrictions.
-
-        Args:
-            account_type: "margin" or "cash"
-            equity: Current account equity
-            day_trades_count: Number of day trades in last 5 trading days
-
-        Returns:
-            ComplianceResult with PDT violations
-        """
-        violations = []
-        warnings = []
-
-        if account_type not in ["margin", "cash"]:
-            violations.append("Account type must be 'margin' or 'cash'")
-
-        if equity <= 0:
-            violations.append("Equity must be positive")
-
-        if day_trades_count < 0:
-            violations.append("Day trades count cannot be negative")
-
-        # PDT rule: >= 4 day trades in 5 days requires $25k+ equity on margin account
-        if account_type == "margin" and day_trades_count >= 4:
-            if equity < 25000:
-                violations.append(
-                    f"PDT violation: {day_trades_count} day trades but only ${equity} equity (need $25k)"
-                )
-
-        passes = len(violations) == 0
-
-        return ComplianceResult(
-            passes=passes,
-            violations=violations,
-            warnings=warnings,
-        )
+        # If all checks pass
+        return ComplianceResult(passes=True)

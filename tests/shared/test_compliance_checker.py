@@ -18,7 +18,7 @@ class TestComplianceResult:
 
     def test_result_creation_fails(self):
         """Should create result with passes=False and violations."""
-        violations = ["Violation 1", "Violation 2"]
+        violations = ["violation1", "violation2"]
         result = ComplianceResult(passes=False, violations=violations)
         assert result.passes is False
         assert result.violations == violations
@@ -40,406 +40,438 @@ class TestComplianceResult:
         result = ComplianceResult(passes=True, violations=[], warnings=warnings)
         assert result["warnings"] == warnings
 
-    def test_result_attribute_access(self):
-        """Should support normal attribute access."""
-        result = ComplianceResult(passes=True, violations=[], warnings=[])
-        assert result.passes is True
-        assert result.violations == []
-        assert result.warnings == []
+    def test_result_max_allowed_notional(self):
+        """Should support max_allowed_notional field."""
+        result = ComplianceResult(
+            passes=False,
+            violations=["position_limit"],
+            max_allowed_notional=250000.0,
+        )
+        assert result["max_allowed_notional"] == 250000.0
+
+    def test_result_pdt_day_trades(self):
+        """Should support pdt_day_trades field."""
+        result = ComplianceResult(
+            passes=False,
+            violations=["pdt_violation"],
+            pdt_day_trades=4,
+        )
+        assert result["pdt_day_trades"] == 4
 
 
-class TestCheckTrade:
-    """Test basic trade validation."""
+# ============================================================================
+# REQUIRED TESTS (exact names from plan)
+# ============================================================================
 
-    def test_valid_long_trade(self):
-        """Should approve valid long trade."""
-        checker = ComplianceChecker()
-        result = checker.check_trade(symbol="AAPL", action="long", quantity=100)
-        assert result.passes is True
-        assert result.violations == []
 
-    def test_valid_short_trade(self):
-        """Should approve valid short trade."""
-        checker = ComplianceChecker()
-        result = checker.check_trade(symbol="MSFT", action="short", quantity=50)
-        assert result.passes is True
-        assert result.violations == []
+def test_position_limit_exceeds_max():
+    """Test: reject trade if position would exceed max size (25% portfolio)."""
+    checker = ComplianceChecker()
 
-    def test_invalid_quantity_zero(self):
-        """Should reject zero quantity."""
-        checker = ComplianceChecker()
-        result = checker.check_trade(symbol="AAPL", action="long", quantity=0)
-        assert result.passes is False
-        assert any("positive" in v.lower() for v in result.violations)
+    # Scenario: portfolio = $1M, trade = 300k shares at $100 = $30M (30% > 25% limit)
+    result = checker.check_trade(
+        symbol="AAPL",
+        quantity=300000,
+        price=100.0,
+        action="BUY",
+        portfolio_value=1_000_000,
+        current_position_qty=0,
+        broker_limits={},
+    )
 
-    def test_invalid_quantity_negative(self):
-        """Should reject negative quantity."""
-        checker = ComplianceChecker()
-        result = checker.check_trade(symbol="AAPL", action="long", quantity=-100)
-        assert result.passes is False
-        assert any("positive" in v.lower() for v in result.violations)
+    assert result["passes"] is False
+    assert "position_limit" in result["violations"]
+    assert result["max_allowed_notional"] == 250_000  # 25% of $1M
 
-    def test_quantity_exceeds_max(self):
-        """Should reject quantity over 10000 shares."""
-        checker = ComplianceChecker()
-        result = checker.check_trade(symbol="AAPL", action="long", quantity=10001)
-        assert result.passes is False
-        assert any("10000" in v for v in result.violations)
 
-    def test_invalid_symbol_empty(self):
-        """Should reject empty symbol."""
-        checker = ComplianceChecker()
-        result = checker.check_trade(symbol="", action="long", quantity=100)
-        assert result.passes is False
-        assert any("symbol" in v.lower() for v in result.violations)
+def test_position_limit_within_bounds():
+    """Test: allow trade if position stays within 25% limit."""
+    checker = ComplianceChecker()
 
-    def test_invalid_symbol_lowercase(self):
-        """Should reject lowercase symbol."""
-        checker = ComplianceChecker()
-        result = checker.check_trade(symbol="aapl", action="long", quantity=100)
-        assert result.passes is False
-        assert any("symbol" in v.lower() for v in result.violations)
+    # Trade: 200k shares at $100 = $20M (20% of $1M portfolio)
+    result = checker.check_trade(
+        symbol="AAPL",
+        quantity=200000,
+        price=100.0,
+        action="BUY",
+        portfolio_value=1_000_000,
+        current_position_qty=0,
+        broker_limits={},
+    )
 
-    def test_invalid_symbol_too_long(self):
-        """Should reject symbol longer than 5 chars."""
-        checker = ComplianceChecker()
-        result = checker.check_trade(symbol="TOOLONG", action="long", quantity=100)
-        assert result.passes is False
-        assert any("symbol" in v.lower() for v in result.violations)
+    assert result["passes"] is True
+    assert len(result.get("violations", [])) == 0
 
-    def test_invalid_action(self):
-        """Should reject invalid action."""
-        checker = ComplianceChecker()
-        result = checker.check_trade(symbol="AAPL", action="invalid", quantity=100)
-        assert result.passes is False
-        assert any("long" in v.lower() or "short" in v.lower() for v in result.violations)
 
-    def test_short_without_price_warning(self):
-        """Should warn on short without last_short_price."""
-        checker = ComplianceChecker()
-        result = checker.check_trade(symbol="AAPL", action="short", quantity=100, last_short_price=None)
-        # Should still pass but with warning
-        assert result.passes is True
-        assert any("short" in w.lower() for w in result.warnings)
+def test_pdt_rule_violation():
+    """Test: reject 4th day trade if account < $25k."""
+    checker = ComplianceChecker()
 
-    def test_short_with_price_no_warning(self):
-        """Should not warn on short with last_short_price."""
+    # Small account ($10k) with 3 day trades today = 4th would violate PDT
+    result = checker.check_trade(
+        symbol="AAPL",
+        quantity=100,
+        price=150.0,
+        action="BUY",
+        portfolio_value=10_000,  # < $25k PDT minimum
+        current_position_qty=0,
+        broker_limits={},
+        day_trades_today=3,  # Already 3 day trades
+    )
+
+    assert result["passes"] is False
+    assert "pdt_violation" in result["violations"]
+
+
+def test_short_sale_uptick_rule():
+    """Test: reject short sale if price didn't uptick from last trade."""
+    checker = ComplianceChecker()
+
+    result = checker.check_trade(
+        symbol="AAPL",
+        quantity=100,
+        price=149.99,  # Price didn't uptick from $150
+        action="SELL",
+        portfolio_value=100_000,
+        current_position_qty=0,  # Going short
+        broker_limits={},
+        last_short_price=150.0,
+    )
+
+    assert result["passes"] is False
+    assert "short_sale_uptick" in result["violations"]
+
+
+def test_concentration_limit():
+    """Test: warn if single stock exceeds 15% of portfolio."""
+    checker = ComplianceChecker()
+
+    # Portfolio: $1M, single position would be $200k (20% > 15% warning)
+    result = checker.check_trade(
+        symbol="AAPL",
+        quantity=1000,
+        price=200.0,
+        action="BUY",
+        portfolio_value=1_000_000,
+        current_position_qty=0,
+        broker_limits={},
+    )
+
+    # Should pass but include concentration warning
+    assert "concentration_warning" in result.get("warnings", [])
+
+
+# ============================================================================
+# ADDITIONAL EDGE CASE TESTS
+# ============================================================================
+
+
+class TestPositionLimitEdgeCases:
+    """Test position limit boundary conditions."""
+
+    def test_position_at_exactly_25_percent(self):
+        """Should allow position at exactly 25% limit."""
         checker = ComplianceChecker()
         result = checker.check_trade(
-            symbol="AAPL", action="short", quantity=100, last_short_price=150.0
-        )
-        assert result.passes is True
-        assert len([w for w in result.warnings if "short" in w.lower()]) == 0
-
-
-class TestPDTRule:
-    """Test Pattern Day Trading (PDT) rule enforcement."""
-
-    def test_zero_day_trades_allowed(self):
-        """Should allow trade with 0 day trades."""
-        checker = ComplianceChecker()
-        result = checker.check_trade(symbol="AAPL", action="long", quantity=100, day_trades_today=0)
-        assert result.passes is True
-        assert not any("PDT" in v for v in result.violations)
-
-    def test_one_day_trade_allowed(self):
-        """Should allow trade with 1 day trade."""
-        checker = ComplianceChecker()
-        result = checker.check_trade(symbol="AAPL", action="long", quantity=100, day_trades_today=1)
-        assert result.passes is True
-        assert not any("PDT" in v for v in result.violations)
-
-    def test_two_day_trades_allowed(self):
-        """Should allow trade with 2 day trades."""
-        checker = ComplianceChecker()
-        result = checker.check_trade(symbol="AAPL", action="long", quantity=100, day_trades_today=2)
-        assert result.passes is True
-        assert not any("PDT" in v for v in result.violations)
-
-    def test_three_day_trades_allowed(self):
-        """Should allow trade with 3 day trades."""
-        checker = ComplianceChecker()
-        result = checker.check_trade(symbol="AAPL", action="long", quantity=100, day_trades_today=3)
-        assert result.passes is True
-        assert not any("PDT" in v for v in result.violations)
-
-    def test_four_day_trades_blocked(self):
-        """Should reject 4th day trade (PDT violation)."""
-        checker = ComplianceChecker()
-        result = checker.check_trade(symbol="AAPL", action="long", quantity=100, day_trades_today=4)
-        assert result.passes is False
-        assert any("PDT" in v for v in result.violations)
-
-    def test_five_day_trades_blocked(self):
-        """Should reject 5th day trade (PDT violation)."""
-        checker = ComplianceChecker()
-        result = checker.check_trade(symbol="AAPL", action="long", quantity=100, day_trades_today=5)
-        assert result.passes is False
-        assert any("PDT" in v for v in result.violations)
-
-    def test_pdt_message_includes_count(self):
-        """PDT violation message should include day trade count."""
-        checker = ComplianceChecker()
-        result = checker.check_trade(symbol="AAPL", action="long", quantity=100, day_trades_today=4)
-        assert result.passes is False
-        assert any("4" in v for v in result.violations)
-
-
-class TestShortSaleChecks:
-    """Test short sale specific validations."""
-
-    def test_short_sale_above_last_price(self):
-        """Should allow short at price >= last short price."""
-        checker = ComplianceChecker()
-        result = checker.check_short_sale(
-            symbol="AAPL", quantity=100, current_price=150.0, last_short_price=150.0
-        )
-        assert result.passes is True
-        assert "uptick" not in " ".join(result.violations).lower()
-
-    def test_short_sale_below_last_price_rejected(self):
-        """Should reject short at price < last short price (uptick rule)."""
-        checker = ComplianceChecker()
-        result = checker.check_short_sale(
-            symbol="AAPL", quantity=100, current_price=145.0, last_short_price=150.0
-        )
-        assert result.passes is False
-        assert any("uptick" in v.lower() for v in result.violations)
-
-    def test_short_with_1pct_tolerance(self):
-        """Should allow short within 1% of last price."""
-        checker = ComplianceChecker()
-        result = checker.check_short_sale(
-            symbol="AAPL", quantity=100, current_price=149.0, last_short_price=150.0
+            symbol="AAPL",
+            quantity=250000,
+            price=100.0,
+            action="BUY",
+            portfolio_value=1_000_000,
+            current_position_qty=0,
+            broker_limits={},
         )
         assert result.passes is True
 
-    def test_short_zero_quantity_rejected(self):
-        """Should reject short with zero quantity."""
-        checker = ComplianceChecker()
-        result = checker.check_short_sale(
-            symbol="AAPL", quantity=0, current_price=150.0, last_short_price=150.0
-        )
-        assert result.passes is False
-
-    def test_short_negative_quantity_rejected(self):
-        """Should reject short with negative quantity."""
-        checker = ComplianceChecker()
-        result = checker.check_short_sale(
-            symbol="AAPL", quantity=-100, current_price=150.0, last_short_price=150.0
-        )
-        assert result.passes is False
-
-    def test_short_invalid_symbol_rejected(self):
-        """Should reject short with invalid symbol."""
-        checker = ComplianceChecker()
-        result = checker.check_short_sale(
-            symbol="toolong", quantity=100, current_price=150.0, last_short_price=150.0
-        )
-        assert result.passes is False
-
-
-class TestPDTStatus:
-    """Test PDT account status checking."""
-
-    def test_margin_account_below_4_trades(self):
-        """Margin account with < 4 day trades should be allowed."""
-        checker = ComplianceChecker()
-        result = checker.check_pdt_status(account_type="margin", equity=25000, day_trades_count=3)
-        assert result.passes is True
-
-    def test_margin_account_4_trades_25k_equity(self):
-        """Margin account with 4 trades and $25k equity should be allowed."""
-        checker = ComplianceChecker()
-        result = checker.check_pdt_status(account_type="margin", equity=25000, day_trades_count=4)
-        assert result.passes is True
-
-    def test_margin_account_4_trades_insufficient_equity(self):
-        """Margin account with 4 trades but < $25k equity should fail."""
-        checker = ComplianceChecker()
-        result = checker.check_pdt_status(account_type="margin", equity=24999, day_trades_count=4)
-        assert result.passes is False
-        assert any("25k" in v.lower() or "$25" in v for v in result.violations)
-
-    def test_cash_account_no_pdt_restriction(self):
-        """Cash account should not have PDT restrictions."""
-        checker = ComplianceChecker()
-        result = checker.check_pdt_status(account_type="cash", equity=5000, day_trades_count=10)
-        assert result.passes is True
-
-    def test_invalid_account_type(self):
-        """Should reject invalid account type."""
-        checker = ComplianceChecker()
-        result = checker.check_pdt_status(account_type="invalid", equity=25000, day_trades_count=0)
-        assert result.passes is False
-
-    def test_negative_equity_rejected(self):
-        """Should reject negative equity."""
-        checker = ComplianceChecker()
-        result = checker.check_pdt_status(account_type="margin", equity=-1000, day_trades_count=0)
-        assert result.passes is False
-
-    def test_zero_equity_rejected(self):
-        """Should reject zero equity."""
-        checker = ComplianceChecker()
-        result = checker.check_pdt_status(account_type="margin", equity=0, day_trades_count=0)
-        assert result.passes is False
-
-    def test_negative_day_trades_rejected(self):
-        """Should reject negative day trades count."""
-        checker = ComplianceChecker()
-        result = checker.check_pdt_status(account_type="margin", equity=25000, day_trades_count=-1)
-        assert result.passes is False
-
-
-class TestPositionLimits:
-    """Test position size limit warnings."""
-
-    def test_default_position_limit(self):
-        """Should accept default 5% position limit."""
+    def test_position_exceeds_25_by_one_share(self):
+        """Should reject position exceeding 25% by even one share."""
         checker = ComplianceChecker()
         result = checker.check_trade(
-            symbol="AAPL", action="long", quantity=100, position_limit_pct=0.05
-        )
-        assert result.passes is True
-
-    def test_unusual_position_limit_too_small(self):
-        """Should warn on unusually small position limit."""
-        checker = ComplianceChecker()
-        result = checker.check_trade(
-            symbol="AAPL", action="long", quantity=100, position_limit_pct=0.001
-        )
-        # Should still pass but with warning
-        assert result.passes is True
-        assert any("unusual" in w.lower() for w in result.warnings)
-
-    def test_unusual_position_limit_too_large(self):
-        """Should warn on unusually large position limit."""
-        checker = ComplianceChecker()
-        result = checker.check_trade(
-            symbol="AAPL", action="long", quantity=100, position_limit_pct=0.75
-        )
-        # Should still pass but with warning
-        assert result.passes is True
-        assert any("unusual" in w.lower() for w in result.warnings)
-
-    def test_reasonable_position_limits(self):
-        """Should accept reasonable position limits without warning."""
-        checker = ComplianceChecker()
-        for limit in [0.01, 0.05, 0.10, 0.25, 0.50]:
-            result = checker.check_trade(
-                symbol="AAPL", action="long", quantity=100, position_limit_pct=limit
-            )
-            assert result.passes is True
-            # None of these should generate position limit warnings
-            assert not any("unusual" in w.lower() for w in result.warnings)
-
-
-class TestMultipleViolations:
-    """Test when trade has multiple violations."""
-
-    def test_multiple_violations_collected(self):
-        """Should collect all violations in one result."""
-        checker = ComplianceChecker()
-        result = checker.check_trade(
-            symbol="invalid",  # Invalid symbol
-            action="invalid",  # Invalid action
-            quantity=-100,  # Invalid quantity
-            day_trades_today=5,  # PDT violation
+            symbol="AAPL",
+            quantity=250001,
+            price=100.0,
+            action="BUY",
+            portfolio_value=1_000_000,
+            current_position_qty=0,
+            broker_limits={},
         )
         assert result.passes is False
-        assert len(result.violations) >= 3
+        assert "position_limit" in result.violations
 
-    def test_violations_list_not_empty(self):
-        """Failed result should have non-empty violations list."""
+    def test_sell_action_not_subject_to_position_limit(self):
+        """SELL action should not trigger position limit violation."""
         checker = ComplianceChecker()
-        result = checker.check_trade(symbol="", action="long", quantity=-1)
-        assert result.passes is False
-        assert isinstance(result.violations, list)
-        assert len(result.violations) > 0
+        result = checker.check_trade(
+            symbol="AAPL",
+            quantity=300000,
+            price=100.0,
+            action="SELL",
+            portfolio_value=1_000_000,
+            current_position_qty=500000,
+            broker_limits={},
+        )
+        # SELL should not violate position limit (reducing position)
+        assert "position_limit" not in result.violations
 
-    def test_passes_result_no_violations(self):
-        """Passing result should have empty violations list."""
+
+class TestPDTEdgeCases:
+    """Test PDT rule boundary conditions."""
+
+    def test_pdt_not_triggered_with_25k_account(self):
+        """Should allow 4th day trade with $25k+ account."""
         checker = ComplianceChecker()
-        result = checker.check_trade(symbol="AAPL", action="long", quantity=100)
+        result = checker.check_trade(
+            symbol="AAPL",
+            quantity=100,
+            price=150.0,
+            action="BUY",
+            portfolio_value=25_000,  # Exactly at minimum
+            current_position_qty=0,
+            broker_limits={},
+            day_trades_today=3,
+        )
         assert result.passes is True
-        assert result.violations == []
+
+    def test_pdt_only_triggered_below_25k(self):
+        """PDT should only trigger when account < $25k."""
+        checker = ComplianceChecker()
+        result = checker.check_trade(
+            symbol="AAPL",
+            quantity=100,
+            price=150.0,
+            action="BUY",
+            portfolio_value=24_999,  # Just below minimum
+            current_position_qty=0,
+            broker_limits={},
+            day_trades_today=3,
+        )
+        assert result.passes is False
+        assert "pdt_violation" in result.violations
+
+    def test_pdt_not_triggered_with_only_3_day_trades(self):
+        """Should allow 3rd day trade even on small account."""
+        checker = ComplianceChecker()
+        result = checker.check_trade(
+            symbol="AAPL",
+            quantity=100,
+            price=150.0,
+            action="BUY",
+            portfolio_value=10_000,
+            current_position_qty=0,
+            broker_limits={},
+            day_trades_today=2,  # Only 2 so far
+        )
+        assert result.passes is True
+
+    def test_pdt_sell_with_existing_position_is_day_trade(self):
+        """SELL with existing position counts as day trade (closing position)."""
+        checker = ComplianceChecker()
+        result = checker.check_trade(
+            symbol="AAPL",
+            quantity=100,
+            price=150.0,
+            action="SELL",
+            portfolio_value=10_000,
+            current_position_qty=100,  # Have position
+            broker_limits={},
+            day_trades_today=3,
+        )
+        assert result.passes is False
+        assert "pdt_violation" in result.violations
+
+
+class TestUptickRule:
+    """Test short-sale uptick rule."""
+
+    def test_short_at_exactly_last_price_allowed(self):
+        """Should allow short at exactly last price."""
+        checker = ComplianceChecker()
+        result = checker.check_trade(
+            symbol="AAPL",
+            quantity=100,
+            price=150.0,
+            action="SELL",
+            portfolio_value=100_000,
+            current_position_qty=0,  # Going short
+            broker_limits={},
+            last_short_price=150.0,
+        )
+        assert result.passes is True
+
+    def test_short_above_last_price_allowed(self):
+        """Should allow short above last price."""
+        checker = ComplianceChecker()
+        result = checker.check_trade(
+            symbol="AAPL",
+            quantity=100,
+            price=151.0,
+            action="SELL",
+            portfolio_value=100_000,
+            current_position_qty=0,
+            broker_limits={},
+            last_short_price=150.0,
+        )
+        assert result.passes is True
+
+    def test_short_without_last_price_allowed(self):
+        """Should allow short when no last_short_price provided."""
+        checker = ComplianceChecker()
+        result = checker.check_trade(
+            symbol="AAPL",
+            quantity=100,
+            price=150.0,
+            action="SELL",
+            portfolio_value=100_000,
+            current_position_qty=0,
+            broker_limits={},
+            last_short_price=None,
+        )
+        assert result.passes is True
+
+    def test_long_sale_not_subject_to_uptick(self):
+        """Long sale (closing existing position) not subject to uptick rule."""
+        checker = ComplianceChecker()
+        result = checker.check_trade(
+            symbol="AAPL",
+            quantity=100,
+            price=149.0,
+            action="SELL",
+            portfolio_value=100_000,
+            current_position_qty=100,  # Closing existing position
+            broker_limits={},
+            last_short_price=150.0,
+        )
+        # Closing position should not violate uptick rule
+        assert "short_sale_uptick" not in result.violations
+
+
+class TestConcentrationLimit:
+    """Test concentration warning logic."""
+
+    def test_concentration_at_exactly_15_percent(self):
+        """Should allow position at exactly 15%."""
+        checker = ComplianceChecker()
+        result = checker.check_trade(
+            symbol="AAPL",
+            quantity=750,
+            price=200.0,
+            action="BUY",
+            portfolio_value=1_000_000,
+            current_position_qty=0,
+            broker_limits={},
+        )
+        # At exactly 15%, should not warn
+        assert "concentration_warning" not in result.get("warnings", [])
+
+    def test_concentration_exceeds_15_percent(self):
+        """Should warn when position exceeds 15%."""
+        checker = ComplianceChecker()
+        result = checker.check_trade(
+            symbol="AAPL",
+            quantity=751,  # Slightly over 15%
+            price=200.0,
+            action="BUY",
+            portfolio_value=1_000_000,
+            current_position_qty=0,
+            broker_limits={},
+        )
+        assert "concentration_warning" in result.get("warnings", [])
+
+    def test_sell_no_concentration_warning(self):
+        """SELL action should not generate concentration warning."""
+        checker = ComplianceChecker()
+        result = checker.check_trade(
+            symbol="AAPL",
+            quantity=1000,
+            price=200.0,
+            action="SELL",
+            portfolio_value=1_000_000,
+            current_position_qty=1000,
+            broker_limits={},
+        )
+        # SELL reduces concentration, should not warn
+        assert "concentration_warning" not in result.get("warnings", [])
+
+    def test_small_position_no_concentration_warning(self):
+        """Small positions should not generate warning."""
+        checker = ComplianceChecker()
+        result = checker.check_trade(
+            symbol="AAPL",
+            quantity=100,
+            price=200.0,
+            action="BUY",
+            portfolio_value=1_000_000,
+            current_position_qty=0,
+            broker_limits={},
+        )
+        # Only 2% of portfolio
+        assert "concentration_warning" not in result.get("warnings", [])
+
+
+class TestMultipleRules:
+    """Test interactions between multiple rules."""
+
+    def test_position_limit_takes_precedence_over_concentration(self):
+        """Position limit violation should fail even with concentration warning."""
+        checker = ComplianceChecker()
+        result = checker.check_trade(
+            symbol="AAPL",
+            quantity=300000,
+            price=100.0,
+            action="BUY",
+            portfolio_value=1_000_000,
+            current_position_qty=0,
+            broker_limits={},
+        )
+        # Should fail on position limit, not just warn on concentration
+        assert result.passes is False
+        assert "position_limit" in result.violations
+
+    def test_pdt_takes_precedence_over_other_checks(self):
+        """PDT violation should fail immediately."""
+        checker = ComplianceChecker()
+        result = checker.check_trade(
+            symbol="AAPL",
+            quantity=100,
+            price=150.0,
+            action="BUY",
+            portfolio_value=10_000,  # < $25k
+            current_position_qty=0,
+            broker_limits={},
+            day_trades_today=3,  # 4th day trade
+        )
+        assert result.passes is False
+        assert "pdt_violation" in result.violations
 
 
 class TestBrokerLimits:
-    """Test broker-specific limits (reserved for future use)."""
+    """Test broker-specific limits (reserved for future)."""
 
     def test_empty_broker_limits_accepted(self):
         """Should accept empty broker limits dict."""
         checker = ComplianceChecker()
         result = checker.check_trade(
-            symbol="AAPL", action="long", quantity=100, broker_limits={}
-        )
-        assert result.passes is True
-
-    def test_none_broker_limits_accepted(self):
-        """Should accept None broker limits."""
-        checker = ComplianceChecker()
-        result = checker.check_trade(
-            symbol="AAPL", action="long", quantity=100, broker_limits=None
-        )
-        assert result.passes is True
-
-    def test_broker_limits_passed_through(self):
-        """Should handle broker limits without error (not implemented yet)."""
-        checker = ComplianceChecker()
-        broker_limits = {"max_single_order": 5000, "min_notional": 100}
-        result = checker.check_trade(
-            symbol="AAPL", action="long", quantity=100, broker_limits=broker_limits
-        )
-        # Should not crash; these limits not enforced yet
-        assert isinstance(result, ComplianceResult)
-
-
-class TestEdgeCases:
-    """Test edge cases and boundary conditions."""
-
-    def test_exactly_10000_shares_allowed(self):
-        """Should allow exactly 10000 shares."""
-        checker = ComplianceChecker()
-        result = checker.check_trade(symbol="AAPL", action="long", quantity=10000)
-        assert result.passes is True
-
-    def test_fractional_quantity_allowed(self):
-        """Should allow fractional shares."""
-        checker = ComplianceChecker()
-        result = checker.check_trade(symbol="AAPL", action="long", quantity=10.5)
-        assert result.passes is True
-
-    def test_very_small_fractional_allowed(self):
-        """Should allow very small fractional quantities."""
-        checker = ComplianceChecker()
-        result = checker.check_trade(symbol="AAPL", action="long", quantity=0.001)
-        assert result.passes is True
-
-    def test_five_char_symbol_allowed(self):
-        """Should allow 5-character symbols."""
-        checker = ComplianceChecker()
-        result = checker.check_trade(symbol="ABCDE", action="long", quantity=100)
-        assert result.passes is True
-
-    def test_single_char_symbol_allowed(self):
-        """Should allow 1-character symbols."""
-        checker = ComplianceChecker()
-        result = checker.check_trade(symbol="F", action="long", quantity=100)
-        assert result.passes is True
-
-    def test_all_valid_parameters(self):
-        """Should pass with all valid parameters."""
-        checker = ComplianceChecker()
-        result = checker.check_trade(
             symbol="AAPL",
-            action="long",
             quantity=100,
-            position_limit_pct=0.05,
-            day_trades_today=2,
-            last_short_price=None,
+            price=150.0,
+            action="BUY",
+            portfolio_value=1_000_000,
+            current_position_qty=0,
             broker_limits={},
         )
         assert result.passes is True
-        assert result.violations == []
+
+    def test_broker_limits_not_enforced_yet(self):
+        """Broker limits should not be enforced in this version."""
+        checker = ComplianceChecker()
+        result = checker.check_trade(
+            symbol="AAPL",
+            quantity=100,
+            price=150.0,
+            action="BUY",
+            portfolio_value=1_000_000,
+            current_position_qty=0,
+            broker_limits={"max_order_size": 50},  # Would be violated
+        )
+        # Should not fail on broker limits (not implemented)
+        assert "broker" not in " ".join(result.violations).lower()
