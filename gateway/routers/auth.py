@@ -28,6 +28,10 @@ class LoginRequest(BaseModel):
         return v
 
 
+class GoogleLogin(BaseModel):
+    credential: str   # Google ID token from the Sign in with Google button
+
+
 class OtpRequest(BaseModel):
     email: str
 
@@ -47,6 +51,40 @@ def _send_otp_email(recipient: str, otp: str) -> None:
     with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=10) as server:
         server.login(settings.gmail_sender, settings.gmail_app_password)
         server.send_message(msg)
+
+
+def _verify_google_token(credential: str) -> dict:
+    """Verify a Google ID token and return its payload. Raises on failure."""
+    from google.oauth2 import id_token
+    from google.auth.transport import requests as google_requests
+    return id_token.verify_oauth2_token(
+        credential, google_requests.Request(), settings.google_client_id
+    )
+
+
+@router.post("/google")
+async def google_login(body: GoogleLogin):
+    try:
+        payload = _verify_google_token(body.credential)
+    except Exception:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid Google token")
+
+    email = (payload.get("email") or "").lower()
+    if not email or not payload.get("email_verified", False):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Email not verified")
+
+    allowed = [e.strip().lower() for e in settings.allowed_login_emails.split(",") if e.strip()]
+    if allowed and email not in allowed:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Email not authorised")
+
+    token = create_access_token()
+    return {"access_token": token, "token_type": "bearer", "email": email}
+
+
+@router.get("/config")
+async def auth_config():
+    """Public: lets the login page know which Google client ID to use."""
+    return {"google_client_id": settings.google_client_id}
 
 
 @router.post("/login")

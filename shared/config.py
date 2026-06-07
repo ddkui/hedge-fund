@@ -73,6 +73,7 @@ class Settings(BaseSettings):
     allowed_login_emails: str = ""       # comma-separated allowlist; empty = allow all
     otp_expiry_seconds: int = 600        # 10 minutes
     grafana_password: str = "admin"
+    google_client_id: str = ""           # Google OAuth web client ID for "Sign in with Google"
 
     @computed_field
     @property
