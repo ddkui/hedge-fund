@@ -2,7 +2,7 @@
 
 An autonomous AI-powered hedge fund that trades across multiple brokers simultaneously, analyzes market sentiment, executes quant strategies, and self-improves through alpha monitoring.
 
-**Status:** 335 tests passing | Production-ready for paper & live trading | Multi-broker copy-trading enabled
+**Status:** 403+ tests passing | Production-ready for paper & live trading | Multi-broker copy-trading + Researcher agents enabled
 
 ---
 
@@ -300,6 +300,92 @@ AGENT_OPTIMIZER (daily):
 
 ---
 
+## Researcher Agents (Academic Paper Analysis)
+
+### Overview
+
+Two specialized agents monitor academic research for insights:
+
+1. **Supervisor Researcher** - Quant Strategy Research
+2. **Maintainer Researcher** - System Improvement Research
+
+### Supervisor Researcher
+
+Monitors academic papers on quantitative trading strategies (arXiv, SSRN daily):
+
+```
+Papers on: momentum, mean reversion, pairs trading, ML strategies, alternative data
+    ↓
+Score by: relevance (semantic), academic quality (citations), recency
+    ↓
+Filter: confidence > 60%
+    ↓
+Generate: draft trading signals → supervisor agent review
+    ↓
+Save: academic_research table (audit trail)
+    ↓
+Alert: Slack digest daily @ 6:30 AM UTC
+```
+
+**Scoring Formula:**
+```
+confidence = 0.5 × relevance_score 
+           + 0.3 × recency_score 
+           + 0.2 × academic_score
+```
+
+### Maintainer Researcher
+
+Monitors academic papers on system improvements (execution, risk, architecture):
+
+```
+Papers on: order execution, latency, risk management, volatility models, architecture
+    ↓
+Score by: impact (solves system weakness), feasibility (<2 weeks), academic rigor
+    ↓
+Filter: combined_score > 70 (geometric mean)
+    ↓
+Auto-create: GitHub issues with implementation ideas
+    ↓
+Save: system_improvements table (audit trail)
+    ↓
+Alert: Slack digest daily @ 6:30 AM UTC
+```
+
+**Impact Areas:**
+- `execution`: Order routing, VWAP, latency optimization
+- `risk`: Hedging, drawdown protection, volatility models
+- `architecture`: System design, scalability, reliability
+- `performance`: Memory/CPU efficiency, throughput
+
+### API Endpoints
+
+```
+GET  /api/research/papers
+     Query academic papers with pagination
+     Response: {papers: [{title, authors, url, confidence_score, strategy_tags}]}
+
+GET  /api/research/improvements
+     Query system improvements sorted by impact
+     Response: {improvements: [{title, impact_area, combined_score, implementation_idea}]}
+
+POST /api/research/run-supervisor
+     Manually trigger supervisor researcher job
+     Returns: {papers_fetched, papers_scored, draft_signals_created}
+
+POST /api/research/run-maintainer
+     Manually trigger maintainer researcher job
+     Returns: {papers_fetched, papers_scored, github_issues_created}
+```
+
+### Scheduling
+
+Both researchers run **daily at 6:00 AM UTC** via APScheduler.
+Slack digests sent at **6:30 AM UTC** (5 min after completion).
+Manual triggers available via POST endpoints above.
+
+---
+
 ## Database Schema (Key Tables)
 
 **Real-Time:**
@@ -365,6 +451,7 @@ AGENT_OPTIMIZER (daily):
 ✅ **7 Quant Strategies**: Momentum, mean-reversion, ML, Kronos, news-momentum, VWAP, supply-demand
 ✅ **Regime-Aware**: Parameters tune per macro regime (expansion, crisis, pandemic)
 ✅ **Self-Improving**: Daily alpha monitoring, auto-optimization, CIO proposals
+✅ **Researcher Agents**: Academic paper monitoring for quant strategies & system improvements
 ✅ **Real-Time Monitoring**: Prometheus + Grafana dashboards, email alerts
 ✅ **Google Sign-In**: Zero-password auth with email allowlist
 ✅ **Performance Analytics**: Sharpe, Sortino, drawdown, equity curve
@@ -383,8 +470,9 @@ AGENT_OPTIMIZER (daily):
 | Analytics | ✅ 6/6 |
 | Monitoring | ✅ 5/5 |
 | Optimizer | ✅ 9/9 |
+| Researcher Agents | ✅ 68/68 |
 
-**Total: 335 tests passing** ✅
+**Total: 403+ tests passing** ✅
 
 ---
 
