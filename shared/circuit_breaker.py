@@ -29,7 +29,7 @@ class CircuitBreaker:
 
         loss_pct = ((peak_value - portfolio_value) / peak_value) * 100 if peak_value > 0 else 0
 
-        if loss_pct > self.max_loss_pct:
+        if loss_pct >= self.max_loss_pct:
             self.tripped = True
             self.tripped_at = datetime.now(timezone.utc)
             return True, f"Loss {loss_pct:.2f}% exceeds {self.max_loss_pct}% limit"

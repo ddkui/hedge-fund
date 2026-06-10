@@ -1,14 +1,26 @@
 import pytest
 from datetime import datetime
-from sqlalchemy.orm import Session
-from shared.system_improvements import SystemImprovement, add_improvement_record
-from gateway.database import Base, engine
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.pool import StaticPool
+from shared.system_improvements import SystemImprovement, add_improvement_record, Base
 
-def test_add_system_improvement_record():
-    """Test adding a system improvement record to database."""
+@pytest.fixture
+def test_db_engine():
+    """Create a test in-memory SQLite database."""
+    engine = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
     Base.metadata.create_all(engine)
+    return engine
 
-    with Session(engine) as session:
+def test_add_system_improvement_record(test_db_engine):
+    """Test adding a system improvement record to database."""
+    SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=test_db_engine)
+
+    with SessionLocal() as session:
         record = add_improvement_record(
             session=session,
             source="arxiv",
