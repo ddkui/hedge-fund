@@ -12,6 +12,11 @@ description = "AI-powered self-hosted hedge fund"
 where = ["."]
 include = ["shared*", "agents*", "gateway*", "data*"]
 
+[project.optional-dependencies]
+nous = [
+    "hermes-agent @ git+https://github.com/NousResearch/hermes-agent",
+]
+
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]

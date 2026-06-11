@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   LayoutDashboard, Cpu, BarChart2, Activity,
-  FlaskConical, Server, MessageSquare, ArrowLeftRight, BrainCircuit, TrendingUp, Brain, Wallet
+  FlaskConical, Server, MessageSquare, ArrowLeftRight, BrainCircuit, TrendingUp, Brain, Wallet, Wand2
 } from "lucide-react";
 
 const NAV = [
@@ -18,6 +18,7 @@ const NAV = [
   { href: "/kronos",     label: "Kronos AI",  icon: BrainCircuit },
   { href: "/intelligence", label: "Intelligence", icon: Brain },
   { href: "/brokers",    label: "Brokers",    icon: Wallet },
+  { href: "/hermes",     label: "Hermes",     icon: Wand2 },
   { href: "/ops",        label: "Operations", icon: Server },
   { href: "/chat",       label: "CIO Chat",   icon: MessageSquare },
 ];

@@ -3,6 +3,18 @@ from datetime import datetime
 
 
 @dataclass
+class CodePatch:
+    agent_name: str
+    file_path: str
+    description: str
+    original_content: str
+    patched_content: str
+    regime: str = ""
+    win_rate: float = 0.0
+    reason: str = ""
+
+
+@dataclass
 class WeightProposal:
     agent_name: str
     regime: str

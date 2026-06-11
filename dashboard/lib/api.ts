@@ -26,6 +26,13 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
 }
 
 export const api = {
+  hermes: {
+    winRates:     () => apiFetch<WinRateRow[]>("/hermes/win-rates"),
+    weights:      () => apiFetch<Record<string, Record<string, number>>>("/hermes/weights"),
+    proposals:    () => apiFetch<WeightProposal[]>("/hermes/proposals"),
+    patches:      () => apiFetch<CodePatch[]>("/hermes/patches"),
+    instructions: () => apiFetch<string[]>("/hermes/instructions"),
+  },
   portfolio: () => apiFetch<Portfolio>("/portfolio"),
   positions: () => apiFetch<Position[]>("/portfolio/positions"),
   trades: (limit = 100) => apiFetch<Trade[]>(`/portfolio/trades?limit=${limit}`),
@@ -120,4 +127,42 @@ export interface Candle {
   low: number;
   close: number;
   volume: number;
+}
+
+export interface WinRateRow {
+  agent: string;
+  regime: string;
+  wins: number;
+  total: number;
+  win_rate: number;
+}
+
+export interface WeightProposal {
+  id: number;
+  agent: string;
+  regime: string;
+  param_name: string;
+  current_value: number;
+  proposed_value: number;
+  change_pct: number;
+  reason: string;
+  status: string;
+  time: string;
+}
+
+export interface CodePatch {
+  id: number;
+  time: string;
+  agent_name: string;
+  regime: string;
+  win_rate: number;
+  file_path: string;
+  description: string;
+  reason: string;
+  status: string;
+}
+
+export interface CodePatchDetail extends CodePatch {
+  original_content: string;
+  patched_content: string;
 }

@@ -2,7 +2,7 @@
 
 An advanced autonomous AI-powered hedge fund that trades across multiple brokers simultaneously, analyzes market sentiment, executes quantitative strategies, and continuously self-improves through alpha monitoring and academic research integration.
 
-**Status:** 417+ tests passing | Production-ready for paper & live trading | Multi-broker copy-trading + Researcher agents + Hermes self-improvement enabled
+**Status:** 417+ tests passing | Production-ready for paper & live trading | Multi-broker copy-trading + Researcher agents + Hermes self-improvement + Hermes dashboard + Nous Hermes AI integration
 
 ---
 
@@ -1233,62 +1233,111 @@ The system has two complementary self-improvement agents that run in parallel:
 
 Together they form a full feedback loop: the optimizer sharpens each agent's internal logic while Hermes adjusts how much each agent's signal counts in the final consensus.
 
-### Hermes Agent — Aggregator Weight Tuning
+### Hermes Agent — Aggregator Weight Tuning + Code Improvement
+
+Hermes runs hourly and has two modes:
+
+**Default (rule-based):** deterministic ±5% weight adjustments based on win rates.
+
+**Nous Hermes mode** (`NOUS_ENABLED=1`): powered by [Nous Research Hermes Agent](https://github.com/NousResearch/hermes-agent) — an AI agent with a learning loop that uses tools to analyse win rates, tune weights, and propose code improvements autonomously. Falls back to rule-based if the package is unavailable.
 
 ```
 HOURLY (every 3600s):
-═════════════════════════════
+═════════════════════════════════════════════════════
 
-Step 1: Compute win rates
+           ┌─────────────────────────────────────┐
+           │  NOUS_ENABLED=1?                    │
+           │  Yes → Nous Hermes AIAgent          │
+           │  No  → Rule-based analyzer          │
+           └──────────────┬──────────────────────┘
+                          ↓
+Step 1: Collect win rates (signal_outcomes, last 30 days)
 ┌──────────────────────────────────────┐
-│ Query: signal_outcomes last 30 days  │
-│ Group by: agent × regime             │
-│                                      │
 │ technical/expansion  → 72% ✓         │
 │ sentiment/expansion  → 41% ✗         │
 │ macro/crisis         → 78% ✓         │
 │ vwap/contraction     → 38% ✗         │
 └──────────────────────────────────────┘
-
-Step 2: Propose ±5% weight adjustments
+                          ↓
+Step 2: Adjust aggregator weights
 ┌──────────────────────────────────────┐
 │ win_rate ≥ 70% → weight × 1.05      │
-│   technical/expansion: 1.0 → 1.05   │
-│   macro/crisis:        2.0 → 2.1    │
-│                                      │
 │ win_rate < 45% → weight × 0.95      │
-│   sentiment/expansion: 1.0 → 0.95   │
-│   vwap/contraction:    1.0 → 0.95   │
+│ 45–70%         → no change          │
 │                                      │
-│ 45% ≤ win_rate < 70% → no change    │
+│ Change < 10%  → auto-apply to YAML  │
+│ Change ≥ 10%  → queue for CIO       │
 └──────────────────────────────────────┘
-
-Step 3: Auto-apply or queue
+                          ↓
+Step 3: Code improvement (daily, Nous mode)
 ┌──────────────────────────────────────┐
-│ Change < 10%: auto-apply             │
-│   → writes agent_params.yaml        │
-│   → logs to optimizer_history       │
-│                                      │
-│ Change ≥ 10%: CIO approval required  │
-│   → writes to optimizer_proposals   │
-│   → publishes to optimizer.proposal │
+│ For worst 2 agents (win_rate < 50%): │
+│   read_agent_code() → LLM proposes  │
+│   minimal fix → stored in           │
+│   hermes_patches (pending CIO)      │
 └──────────────────────────────────────┘
-
-Step 4: LLM summary → ops.hermes bus
-┌──────────────────────────────────────┐
-│ Hermes generates a 1-2 sentence      │
-│ CIO briefing using the primary LLM   │
-│                                      │
-│ Published to: ops.hermes             │
-│ Also visible in Grafana dashboard    │
-└──────────────────────────────────────┘
+                          ↓
+Step 4: Publish summary → ops.hermes bus
 ```
 
 **Safety constraints:**
-- Weight floor: `0.1` (no agent fully silenced without CIO approval)
-- Weight cap: `2.5` (prevents any single agent dominating)
-- Requires ≥ 10 resolved signals before any change
-- Large changes (≥ 10%) always queue for human review
+- Weight floor: `0.1` / cap: `2.5`
+- Requires ≥ 10 resolved signals before any weight change
+- Large weight changes (≥ 10%) always queue for human review
+- Code patches never auto-apply — CIO must approve via dashboard
+- Only analysis agents are codeable (never execution/risk/portfolio_mgr)
+
+### Hermes Dashboard (`/hermes`)
+
+A dedicated CIO control panel at `/hermes` in the Next.js dashboard:
+
+| Panel | What it does |
+|---|---|
+| **Win Rate Grid** | Agent × regime win rates (30 days), colour-coded green/yellow/red |
+| **Aggregator Weights** | Per-regime inline editing of consensus weights (0.1–2.5) |
+| **Pending Proposals** | Approve or reject Hermes weight proposals before they apply |
+| **AI Code Patches** | Review AI-generated code diffs, apply to disk or reject |
+| **CIO Instructions** | Add/remove instructions injected into every code-improvement prompt |
+| **Run Cycle Now** | Manually trigger a Hermes cycle from the dashboard |
+
+API: `GET/PUT /api/hermes/weights` · `GET/POST/DELETE /api/hermes/instructions` · `POST /api/hermes/patches/{id}/apply` · `POST /api/hermes/trigger`
+
+### Nous Hermes Integration
+
+```
+┌─────────────────────────────────────────────────────┐
+│  NousBridge (agents/hermes/nous_bridge.py)          │
+│                                                     │
+│  async run_cycle()                                  │
+│    │  pre-fetch win rates + YAML (async)            │
+│    │                                                │
+│    ├─ asyncio.to_thread(AIAgent.run_conversation)   │
+│    │   ├─ get_win_rates()      read-only            │
+│    │   ├─ get_weights()        read-only            │
+│    │   ├─ update_weight()      YAML write (sync)    │
+│    │   ├─ queue_weight_proposal() → state list      │
+│    │   ├─ read_agent_code()    read-only            │
+│    │   └─ propose_code_patch() → state list        │
+│    │                                                │
+│    └─ flush writes to DB (async)                   │
+│        optimizer_history / optimizer_proposals      │
+│        hermes_patches                               │
+└─────────────────────────────────────────────────────┘
+
+Embedding fixes:
+  1. Async   → asyncio.to_thread(); never blocks event loop
+  2. Isolation → skip_memory=True + unique session_id per cycle
+  3. Tools   → enabled_toolsets=["hedge_fund"] + disabled built-ins
+  4. Fallback → NOUS_ENABLED=1 opt-in; errors fall back to rule-based
+```
+
+**Setup:**
+```bash
+uv add --optional nous          # install hermes-agent from GitHub
+NOUS_ENABLED=1                  # opt-in via env var
+HERMES_MODEL=nous-hermes2       # model in Ollama
+uv run scripts/migrate_hermes.py  # create hermes_patches table
+```
 
 ### Alpha Monitoring Loop
 
