@@ -12,6 +12,7 @@ AGENT_MODEL_MAP = {
     "quant_supervisor": "research_model",
     "portfolio_mgr": "primary",
     "cio": "primary",
+    "hermes": "primary",
 }
 
 class ModelRouter:

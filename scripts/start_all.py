@@ -35,6 +35,8 @@ AGENTS: list[str] = [
     "agents/ops/notifications.py",
     # Self-improving optimizer + alpha monitor
     "agents/optimizer/main.py",
+    # Hermes: aggregator weight tuning from win-rate feedback
+    "agents/hermes/main.py",
     # Capital.com price feed (only active when CAPITAL_COM_API_KEY is set)
     "agents/capital_feed/agent.py",
 ]

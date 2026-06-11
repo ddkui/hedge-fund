@@ -2,7 +2,7 @@
 
 An advanced autonomous AI-powered hedge fund that trades across multiple brokers simultaneously, analyzes market sentiment, executes quantitative strategies, and continuously self-improves through alpha monitoring and academic research integration.
 
-**Status:** 403+ tests passing | Production-ready for paper & live trading | Multi-broker copy-trading + Researcher agents enabled
+**Status:** 417+ tests passing | Production-ready for paper & live trading | Multi-broker copy-trading + Researcher agents + Hermes self-improvement enabled
 
 ---
 
@@ -1223,6 +1223,72 @@ Layout:
 ---
 
 ## Self-Improving System
+
+The system has two complementary self-improvement agents that run in parallel:
+
+| Agent | Frequency | What it tunes | Trigger |
+|---|---|---|---|
+| **AgentOptimizer** | 24h | Per-agent parameters (thresholds, lookbacks) | `win_rate < 45%` |
+| **Hermes** | 1h | Aggregator consensus weights | `win_rate < 45%` or `> 70%` |
+
+Together they form a full feedback loop: the optimizer sharpens each agent's internal logic while Hermes adjusts how much each agent's signal counts in the final consensus.
+
+### Hermes Agent — Aggregator Weight Tuning
+
+```
+HOURLY (every 3600s):
+═════════════════════════════
+
+Step 1: Compute win rates
+┌──────────────────────────────────────┐
+│ Query: signal_outcomes last 30 days  │
+│ Group by: agent × regime             │
+│                                      │
+│ technical/expansion  → 72% ✓         │
+│ sentiment/expansion  → 41% ✗         │
+│ macro/crisis         → 78% ✓         │
+│ vwap/contraction     → 38% ✗         │
+└──────────────────────────────────────┘
+
+Step 2: Propose ±5% weight adjustments
+┌──────────────────────────────────────┐
+│ win_rate ≥ 70% → weight × 1.05      │
+│   technical/expansion: 1.0 → 1.05   │
+│   macro/crisis:        2.0 → 2.1    │
+│                                      │
+│ win_rate < 45% → weight × 0.95      │
+│   sentiment/expansion: 1.0 → 0.95   │
+│   vwap/contraction:    1.0 → 0.95   │
+│                                      │
+│ 45% ≤ win_rate < 70% → no change    │
+└──────────────────────────────────────┘
+
+Step 3: Auto-apply or queue
+┌──────────────────────────────────────┐
+│ Change < 10%: auto-apply             │
+│   → writes agent_params.yaml        │
+│   → logs to optimizer_history       │
+│                                      │
+│ Change ≥ 10%: CIO approval required  │
+│   → writes to optimizer_proposals   │
+│   → publishes to optimizer.proposal │
+└──────────────────────────────────────┘
+
+Step 4: LLM summary → ops.hermes bus
+┌──────────────────────────────────────┐
+│ Hermes generates a 1-2 sentence      │
+│ CIO briefing using the primary LLM   │
+│                                      │
+│ Published to: ops.hermes             │
+│ Also visible in Grafana dashboard    │
+└──────────────────────────────────────┘
+```
+
+**Safety constraints:**
+- Weight floor: `0.1` (no agent fully silenced without CIO approval)
+- Weight cap: `2.5` (prevents any single agent dominating)
+- Requires ≥ 10 resolved signals before any change
+- Large changes (≥ 10%) always queue for human review
 
 ### Alpha Monitoring Loop
 
