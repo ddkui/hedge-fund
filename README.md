@@ -1645,4 +1645,35 @@ pytest tests/ --cov=agents --cov=shared --cov=gateway --cov-report=html
 
 Built with ❤️ using FastAPI, React, TimescaleDB, Ollama, asyncio, and autonomous intelligence.
 
+---
+
+## Open Source Acknowledgements
+
+This system stands on the shoulders of exceptional open source work:
+
+| Project | What it does for us |
+|---------|---------------------|
+| [FastAPI](https://github.com/tiangolo/fastapi) | Lightning-fast async API gateway |
+| [vectorbt](https://github.com/polakowo/vectorbt) | Vectorised backtesting with walk-forward validation |
+| [hmmlearn](https://github.com/hmmlearn/hmmlearn) | GaussianHMM regime detection |
+| [Optuna](https://github.com/optuna/optuna) | TPE hyperparameter optimisation with pruning |
+| [litellm](https://github.com/BerriAI/litellm) | Unified LLM router with fallbacks and cost tracking |
+| [Hyperliquid Python SDK](https://github.com/hyperliquid-dex/hyperliquid-python) | Perpetual futures execution |
+| [lightweight-charts](https://github.com/tradingview/lightweight-charts) | High-performance TradingView price charts |
+| [Redis](https://github.com/redis/redis) | Agent memory persistence |
+| [TimescaleDB](https://github.com/timescale/timescaledb) | Time-series market data storage |
+| [Prometheus](https://github.com/prometheus/prometheus) | Real-time metrics collection |
+| [Grafana](https://github.com/grafana/grafana) | Operational dashboards |
+| [empyrical](https://github.com/quantopian/empyrical) | Risk-adjusted return metrics |
+| [hmmlearn](https://github.com/hmmlearn/hmmlearn) | Hidden Markov Model training |
+| [scikit-learn](https://github.com/scikit-learn/scikit-learn) | Time-series cross-validation |
+| [yfinance](https://github.com/ranaroussi/yfinance) | Global stock & ETF market data |
+| [ccxt](https://github.com/ccxt/ccxt) | Unified crypto exchange connectivity |
+| [structlog](https://github.com/hynek/structlog) | Structured logging |
+| [pytest](https://github.com/pytest-dev/pytest) | Test framework powering 457+ tests |
+
+Thank you to every contributor who made these projects possible.
+
+---
+
 **Status: Production Ready** 🚀
