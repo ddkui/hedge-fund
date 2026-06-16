@@ -51,6 +51,9 @@ class BrokerRegistry:
         if broker_type == "capital_com":
             from shared.brokers.capital_com import CapitalComAdapter
             return CapitalComAdapter(name, config)
+        if broker_type == "hyperliquid":
+            from shared.brokers.hyperliquid import HyperliquidAdapter
+            return HyperliquidAdapter(name, config)
         return None
 
     def get_all(self) -> list[BrokerAdapter]:

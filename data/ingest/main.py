@@ -33,11 +33,11 @@ async def main():
     await db.connect()
 
     watchlist = settings.stock_watchlist.split(",")
-    crypto_watchlist = settings.crypto_watchlist.split(",")
+    # crypto_watchlist=None → CryptoIngestAgent discovers all active Binance USDT pairs dynamically
 
     agents = [
         StocksIngestAgent(name="stocks_ingest", bus=bus, db=db, router=router, watchlist=watchlist, interval_seconds=60),
-        CryptoIngestAgent(name="crypto_ingest", bus=bus, db=db, router=router, watchlist=crypto_watchlist, interval_seconds=30),
+        CryptoIngestAgent(name="crypto_ingest", bus=bus, db=db, router=router, interval_seconds=30),
         MacroIngestAgent(name="macro_ingest", bus=bus, db=db, router=router, api_key=settings.fred_api_key, interval_seconds=3600),
         NewsIngestAgent(name="news_ingest", bus=bus, db=db, router=router, api_key=settings.news_api_key, interval_seconds=300),
         SecIngestAgent(name="sec_ingest", bus=bus, db=db, router=router, watchlist=watchlist, interval_seconds=3600),

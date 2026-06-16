@@ -35,3 +35,8 @@ google-auth==2.29.0
 arxiv==1.4.7
 sqlalchemy==2.0.27
 apscheduler==3.10.4
+litellm>=1.40.0
+vectorbt>=0.26.1
+hmmlearn>=0.3.0
+optuna>=3.6.0
+empyrical>=0.5.5
