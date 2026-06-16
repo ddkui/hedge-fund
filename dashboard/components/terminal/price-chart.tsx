@@ -8,9 +8,7 @@ import {
   type SeriesMarker,
   type Time,
 } from "lightweight-charts";
-import { api, type Trade } from "@/lib/api";
-
-const WATCHLIST = ["AAPL", "MSFT", "NVDA", "BTCUSDT", "ETHUSDT", "SOLUSDT", "SPY"];
+import { api, type Trade, type SymbolResult } from "@/lib/api";
 
 const PERIODS = [
   { label: "1D", value: "1d", interval: "5m" },
@@ -18,6 +16,9 @@ const PERIODS = [
   { label: "1M", value: "1mo", interval: "1d" },
   { label: "3M", value: "3mo", interval: "1d" },
 ];
+
+// Quick-access defaults shown before any search
+const PINNED = ["BTCUSDT", "ETHUSDT", "AAPL", "NVDA", "HL:BTC", "HL:HYPE", "GC=F", "EURUSD=X"];
 
 interface Candle {
   time: number;
@@ -30,16 +31,25 @@ interface Candle {
 
 export function PriceChart() {
   const chartRef = useRef<HTMLDivElement>(null);
-  const volumeRef = useRef<HTMLDivElement>(null);
   const chartInstance = useRef<IChartApi | null>(null);
   const candleRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const volumeSeries = useRef<ISeriesApi<"Histogram"> | null>(null);
+
   const [selected, setSelected] = useState("BTCUSDT");
   const [period, setPeriod] = useState(PERIODS[1]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastPrice, setLastPrice] = useState<number | null>(null);
   const [priceChange, setPriceChange] = useState<number | null>(null);
+
+  // Search state
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState<SymbolResult[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [showDropdown, setShowDropdown] = useState(false);
+  const [recent, setRecent] = useState<string[]>([]);
+  const searchRef = useRef<HTMLDivElement>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Build chart once
   useEffect(() => {
@@ -175,27 +185,72 @@ export function PriceChart() {
 
   useEffect(() => {
     loadCandles();
-    // Auto-refresh every 30s for live data
     const id = setInterval(loadCandles, 30000);
     return () => clearInterval(id);
   }, [loadCandles]);
 
+  // Close dropdown on outside click
+  useEffect(() => {
+    function handler(e: MouseEvent) {
+      if (searchRef.current && !searchRef.current.contains(e.target as Node)) {
+        setShowDropdown(false);
+      }
+    }
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  // Debounced search
+  const handleQueryChange = (v: string) => {
+    setQuery(v);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    if (!v.trim()) { setResults([]); setShowDropdown(false); return; }
+    debounceRef.current = setTimeout(async () => {
+      setSearching(true);
+      try {
+        const r = await api.searchSymbols(v.trim());
+        setResults(r);
+        setShowDropdown(true);
+      } catch {
+        setResults([]);
+      } finally {
+        setSearching(false);
+      }
+    }, 300);
+  };
+
+  const selectSymbol = (sym: string) => {
+    setSelected(sym);
+    setQuery("");
+    setResults([]);
+    setShowDropdown(false);
+    setRecent((prev) => [sym, ...prev.filter((s) => s !== sym)].slice(0, 8));
+  };
+
   const changeColor = priceChange == null ? "text-muted" : priceChange >= 0 ? "text-accent" : "text-danger";
+  const quickAccess = recent.length > 0 ? recent : PINNED;
 
   return (
-    <div className="bg-surface border border-border rounded-xl p-5">
-      <div className="flex items-center gap-3 mb-4 flex-wrap">
-        <div>
-          <h2 className="text-sm font-semibold text-muted uppercase tracking-widest">
-            Market Chart
-          </h2>
+    <div className="bg-surface border border-border rounded-xl p-5 space-y-4">
+
+      {/* Header row */}
+      <div className="flex items-start gap-4 flex-wrap">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <h2 className="text-sm font-semibold text-muted uppercase tracking-widest">
+              Market Chart
+            </h2>
+            <span className="text-xs font-mono text-accent">{selected}</span>
+            {loading && <span className="text-xs text-muted animate-pulse">Loading…</span>}
+            {error && <span className="text-xs text-danger">{error}</span>}
+          </div>
           {lastPrice != null && (
             <div className="flex items-center gap-2 mt-0.5">
               <span className="text-lg font-bold font-mono">
-                ${lastPrice.toLocaleString("en-US", { maximumFractionDigits: 4 })}
+                {lastPrice.toLocaleString("en-US", { maximumFractionDigits: 4 })}
               </span>
               {priceChange != null && (
-                <span className={`text-sm ${changeColor}`}>
+                <span className={`text-sm font-mono ${changeColor}`}>
                   {priceChange >= 0 ? "▲" : "▼"} {Math.abs(priceChange).toFixed(2)}%
                 </span>
               )}
@@ -203,24 +258,7 @@ export function PriceChart() {
           )}
         </div>
 
-        {/* Symbol selector */}
-        <div className="flex gap-1 flex-wrap ml-4">
-          {WATCHLIST.map((sym) => (
-            <button
-              key={sym}
-              onClick={() => setSelected(sym)}
-              className={`px-3 py-1 rounded text-xs font-mono transition-colors ${
-                selected === sym
-                  ? "bg-accent text-black font-bold"
-                  : "bg-border text-muted hover:text-white"
-              }`}
-            >
-              {sym}
-            </button>
-          ))}
-        </div>
-
-        {/* Period selector */}
+        {/* Period + refresh — push to right */}
         <div className="flex gap-1 ml-auto">
           {PERIODS.map((p) => (
             <button
@@ -238,18 +276,74 @@ export function PriceChart() {
           <button
             onClick={loadCandles}
             className="px-2.5 py-1 rounded text-xs text-muted hover:text-white bg-border"
+            title="Refresh"
           >
             ↻
           </button>
         </div>
-
-        {loading && <span className="text-xs text-muted animate-pulse ml-2">Loading…</span>}
-        {error && <span className="text-xs text-danger ml-2">{error}</span>}
       </div>
 
+      {/* Search + quick-access row */}
+      <div className="flex items-center gap-3 flex-wrap">
+        {/* Autocomplete search */}
+        <div ref={searchRef} className="relative w-72">
+          <input
+            type="text"
+            value={query}
+            onChange={(e) => handleQueryChange(e.target.value)}
+            onFocus={() => query && setShowDropdown(true)}
+            placeholder="Search any symbol — AAPL, 0700.HK, GC=F, HL:BTC…"
+            className="w-full bg-border border border-border rounded-lg px-3 py-1.5 text-xs font-mono placeholder:text-muted/50 focus:outline-none focus:border-accent transition-colors"
+          />
+          {searching && (
+            <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-muted animate-pulse">…</span>
+          )}
+          {showDropdown && results.length > 0 && (
+            <div className="absolute z-50 top-full mt-1 left-0 w-full max-h-64 overflow-y-auto bg-[#13131a] border border-border rounded-lg shadow-xl">
+              {results.map((r) => (
+                <button
+                  key={r.symbol}
+                  onMouseDown={() => selectSymbol(r.symbol)}
+                  className="w-full text-left px-3 py-2 hover:bg-white/5 border-b border-border/30 last:border-0"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs font-mono font-bold text-white">{r.symbol}</span>
+                    <span className="text-[10px] text-muted/70 uppercase">{r.type} · {r.exchange}</span>
+                  </div>
+                  <div className="text-[11px] text-muted truncate">{r.name}</div>
+                </button>
+              ))}
+            </div>
+          )}
+          {showDropdown && !searching && results.length === 0 && query && (
+            <div className="absolute z-50 top-full mt-1 left-0 w-full bg-[#13131a] border border-border rounded-lg px-3 py-2 text-xs text-muted">
+              No results for "{query}"
+            </div>
+          )}
+        </div>
+
+        {/* Quick-access symbols */}
+        <div className="flex gap-1 flex-wrap">
+          {quickAccess.map((sym) => (
+            <button
+              key={sym}
+              onClick={() => selectSymbol(sym)}
+              className={`px-2.5 py-1 rounded text-xs font-mono transition-colors ${
+                selected === sym
+                  ? "bg-accent text-black font-bold"
+                  : "bg-border text-muted hover:text-white"
+              }`}
+            >
+              {sym}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Chart */}
       <div ref={chartRef} className="rounded overflow-hidden" />
-      <p className="text-xs text-muted mt-2">
-        ▲ = entry / ▼ = exit — trade markers from executed orders
+      <p className="text-xs text-muted">
+        ▲ = entry · ▼ = exit — trade markers from executed orders · Search supports stocks, ETFs, futures, forex, crypto, indices from any global exchange
       </p>
     </div>
   );

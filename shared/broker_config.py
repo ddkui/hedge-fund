@@ -8,7 +8,7 @@ masked (only last 4 chars shown) so keys are never sent back to the browser in f
 import os
 import yaml
 
-SECRET_FIELDS = {"api_key", "secret_key", "password"}
+SECRET_FIELDS = {"api_key", "secret_key", "password", "private_key"}
 DEFAULT_PATH = "brokers.yaml"
 
 # Required fields per broker type (besides name + type + enabled)
@@ -16,6 +16,7 @@ TYPE_FIELDS = {
     "alpaca": ["api_key", "secret_key", "paper"],
     "ib": ["host", "port", "client_id"],
     "capital_com": ["api_key", "identifier", "password", "base_url"],
+    "hyperliquid": ["wallet_address", "private_key", "testnet"],
 }
 
 

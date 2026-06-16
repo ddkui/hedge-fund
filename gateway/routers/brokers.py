@@ -10,7 +10,7 @@ router = APIRouter()
 
 class BrokerAccount(BaseModel):
     name: str
-    type: str                      # alpaca | ib | capital_com
+    type: str                      # alpaca | ib | capital_com | hyperliquid
     enabled: bool = True
     # alpaca
     api_key: str | None = None
@@ -24,6 +24,10 @@ class BrokerAccount(BaseModel):
     identifier: str | None = None
     password: str | None = None
     base_url: str | None = None
+    # hyperliquid
+    wallet_address: str | None = None
+    private_key: str | None = None
+    testnet: bool | None = None
 
 
 class ToggleRequest(BaseModel):

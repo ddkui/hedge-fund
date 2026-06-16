@@ -49,6 +49,8 @@ export const api = {
   }),
   prices: (symbol: string, period: string, interval: string) =>
     apiFetch<Candle[]>(`/prices/${symbol}?period=${period}&interval=${interval}`),
+  searchSymbols: (q: string) =>
+    apiFetch<SymbolResult[]>(`/prices/search?q=${encodeURIComponent(q)}&limit=20`),
   tradeMarkers: (symbol: string) =>
     apiFetch<Trade[]>(`/portfolio/trades?limit=500`),
 };
@@ -127,6 +129,13 @@ export interface Candle {
   low: number;
   close: number;
   volume: number;
+}
+
+export interface SymbolResult {
+  symbol: string;
+  name: string;
+  exchange: string;
+  type: string;
 }
 
 export interface WinRateRow {
