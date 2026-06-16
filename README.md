@@ -2,7 +2,7 @@
 
 An advanced autonomous AI-powered hedge fund that trades across multiple brokers simultaneously, analyzes market sentiment, executes quantitative strategies, and continuously self-improves through alpha monitoring and academic research integration.
 
-**Status:** 417+ tests passing | Production-ready for paper & live trading | Multi-broker copy-trading + Researcher agents + Hermes self-improvement + Hermes dashboard + Nous Hermes AI integration
+**Status:** 457+ tests passing | Production-ready for paper & live trading | Multi-broker copy-trading + Hyperliquid perps + Global market universe + Researcher agents + Hermes self-improvement + Hermes dashboard + Nous Hermes AI integration
 
 ---
 
@@ -34,8 +34,9 @@ The hedge fund operates as an integrated system of specialized agents that colla
 │                                                                                  │
 │  ┌─────────────────────────────────────────────────────────────────────────┐   │
 │  │  INPUT LAYER: Market Data Ingestion                                     │   │
-│  │  ├─ Stocks (yfinance): 1-min to daily OHLCV                           │   │
-│  │  ├─ Crypto (Binance): Real-time WebSocket feeds                       │   │
+│  │  ├─ Stocks (yfinance + global search): 1-min to daily OHLCV            │   │
+│  │  ├─ Crypto (Binance dynamic universe): Real-time WebSocket feeds      │   │
+│  │  ├─ Perps (Hyperliquid): 0-fee perpetual futures, HL: prefix          │   │
 │  │  ├─ Forex/Commodities (Capital.com): API integration                  │   │
 │  │  └─ Academic Papers (arXiv/SSRN): Daily researcher agents             │   │
 │  └─────────────────────────────────────────────────────────────────────────┘   │
@@ -1507,22 +1508,40 @@ cd dashboard && npm run dev
 ## Key Features
 
 ### ✅ **Multi-Broker Simultaneity**
-Execute one signal across Alpaca + IB + Capital.com instantly
+Execute one signal across Alpaca + IB + Capital.com + Hyperliquid instantly
+
+### ✅ **Global Market Universe**
+Trade everything: US/international stocks (Yahoo Finance search), Binance dynamic crypto universe, Hyperliquid perpetual futures (`HL:` prefix). Symbol autocomplete in dashboard.
+
+### ✅ **Hyperliquid Perps Broker**
+Zero-fee perpetual futures via Hyperliquid DEX. Fully integrated alongside centralised brokers with the same failover and audit trail.
 
 ### ✅ **7 Quantitative Strategies**
 Momentum, mean-reversion, ML quant, Kronos AI, news-momentum, VWAP deviation, supply-demand zones
 
-### ✅ **Regime-Aware Tuning**
-Dynamic weight adjustment for expansion, crisis, and pandemic markets
+### ✅ **Regime-Aware Tuning (HMM-backed)**
+GaussianHMM (3-state) trained on VIX + yield curve + credit spread for regime detection. Auto-tunes per agent/regime with Optuna TPE optimisation (MedianPruner, SQLite storage).
 
 ### ✅ **Self-Improving Alpha**
-Daily Sharpe/Jensen's alpha calculation, auto-tuning per agent/regime, CIO approval for major changes
+Daily Sharpe/Jensen's alpha calculation, Optuna-backed parameter search, CIO approval for changes >10%. Thompson Sampling (Beta distribution) for agent confidence multipliers.
 
 ### ✅ **Academic Researcher Integration**
 Supervisor agent monitors papers on quant strategies (daily), Maintainer agent finds system improvements
 
+### ✅ **Vectorised Backtesting (vectorbt)**
+Walk-forward validation (70/30 split), slippage + commission modelling, Sharpe, Sortino, Calmar, max-drawdown, win-rate — all via vectorbt Portfolio.from_signals().
+
+### ✅ **Unified LLM Router (litellm)**
+litellm Router with TPE fallbacks, 3 retries, cost tracking per call. Supports any Ollama-served model interchangeably.
+
+### ✅ **Agent Memory (Redis + Thompson Sampling)**
+Beta-distribution confidence intervals per agent/regime, Redis persistence with graceful in-memory fallback.
+
+### ✅ **Real-Time Charts**
+TradingView Lightweight Charts in dashboard. Search any symbol (stocks, crypto, perps) and view live price history.
+
 ### ✅ **Real-Time Monitoring**
-Prometheus + Grafana dashboards, email alerts, 403+ automated tests
+Prometheus + Grafana dashboards, email alerts, 457+ automated tests
 
 ### ✅ **Zero-Password Auth**
 Google Sign-In with email allowlist, no credential storage
@@ -1548,8 +1567,13 @@ Complete trade decision logs with agent consensus scores, signals, and risk appr
 | Monitoring | 5 | ✅ |
 | Optimizer | 9 | ✅ |
 | Researcher Agents | 68 | ✅ |
+| Backtester (vectorbt) | 8 | ✅ |
+| Regime Monitor (HMM) | 7 | ✅ |
+| Parameter Tuner (Optuna) | 9 | ✅ |
+| Agent Memory (Redis+Thompson) | 11 | ✅ |
+| Model Router (litellm) | 5 | ✅ |
 
-**Total: 403+ tests passing** ✅
+**Total: 457+ tests passing** ✅
 
 ### Running Tests
 
@@ -1606,8 +1630,9 @@ pytest tests/ --cov=agents --cov=shared --cov=gateway --cov-report=html
 │                                                             │
 │ Layer 1: Data Ingestion                                   │
 │  └─ Multi-Source Feeds                                    │
-│     ├─ yfinance (stocks)                                  │
-│     ├─ Binance (crypto)                                   │
+│     ├─ yfinance + Yahoo search (global stocks/ETFs)       │
+│     ├─ Binance dynamic universe (crypto/spot)             │
+│     ├─ Hyperliquid (perpetual futures, HL: prefix)        │
 │     ├─ Capital.com (forex/CFD)                            │
 │     ├─ NewsAPI/PRAW (sentiment)                           │
 │     ├─ arXiv/SSRN (research)                              │
@@ -1619,5 +1644,35 @@ pytest tests/ --cov=agents --cov=shared --cov=gateway --cov-report=html
 ---
 
 Built with ❤️ using FastAPI, React, TimescaleDB, Ollama, asyncio, and autonomous intelligence.
+
+---
+
+## Open Source Acknowledgements
+
+This system stands on the shoulders of exceptional open source work:
+
+| Project | What it does for us |
+|---------|---------------------|
+| [FastAPI](https://github.com/tiangolo/fastapi) | Lightning-fast async API gateway |
+| [vectorbt](https://github.com/polakowo/vectorbt) | Vectorised backtesting with walk-forward validation |
+| [hmmlearn](https://github.com/hmmlearn/hmmlearn) | GaussianHMM regime detection |
+| [Optuna](https://github.com/optuna/optuna) | TPE hyperparameter optimisation with pruning |
+| [litellm](https://github.com/BerriAI/litellm) | Unified LLM router with fallbacks and cost tracking |
+| [Hyperliquid Python SDK](https://github.com/hyperliquid-dex/hyperliquid-python) | Perpetual futures execution |
+| [lightweight-charts](https://github.com/tradingview/lightweight-charts) | High-performance TradingView price charts |
+| [Redis](https://github.com/redis/redis) | Agent memory persistence |
+| [TimescaleDB](https://github.com/timescale/timescaledb) | Time-series market data storage |
+| [Prometheus](https://github.com/prometheus/prometheus) | Real-time metrics collection |
+| [Grafana](https://github.com/grafana/grafana) | Operational dashboards |
+| [empyrical](https://github.com/quantopian/empyrical) | Risk-adjusted return metrics |
+| [scikit-learn](https://github.com/scikit-learn/scikit-learn) | Time-series cross-validation |
+| [yfinance](https://github.com/ranaroussi/yfinance) | Global stock & ETF market data |
+| [ccxt](https://github.com/ccxt/ccxt) | Unified crypto exchange connectivity |
+| [structlog](https://github.com/hynek/structlog) | Structured logging |
+| [pytest](https://github.com/pytest-dev/pytest) | Test framework powering 457+ tests |
+
+Thank you to every contributor who made these projects possible.
+
+---
 
 **Status: Production Ready** 🚀
