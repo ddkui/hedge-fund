@@ -45,10 +45,19 @@ class BacktestTrade:
 
 
 class Backtester:
-    def __init__(self):
+    def __init__(
+        self,
+        slippage: float = 0.001,
+        fees: float = 0.001,
+        init_cash: float = 100_000.0,
+        is_ratio: float = 0.7,
+    ):
         self.trades: list[BacktestTrade] = []
-        self.starting_capital = 100000.0
-        self.current_cash = self.starting_capital
+        self.starting_capital = init_cash
+        self.current_cash = init_cash
+        self.slippage = slippage
+        self.fees = fees
+        self.is_ratio = is_ratio
 
     def add_trade(self, trade: BacktestTrade) -> None:
         """Add a trade to backtest."""
@@ -92,15 +101,58 @@ class Backtester:
         paper_trades: list[BacktestTrade],
         real_trades: list[BacktestTrade],
     ) -> dict:
-        """Compare paper trading vs real execution."""
         paper_pnl = sum(t.pnl for t in paper_trades if t.pnl is not None)
         real_pnl = sum(t.pnl for t in real_trades if t.pnl is not None)
-
         return {
             "paper_pnl": paper_pnl,
             "real_pnl": real_pnl,
             "difference": real_pnl - paper_pnl,
-            "slippage_pct": ((real_pnl - paper_pnl) / paper_pnl * 100)
-            if paper_pnl != 0
-            else 0,
+            "slippage_pct": ((real_pnl - paper_pnl) / paper_pnl * 100) if paper_pnl != 0 else 0,
         }
+
+    def run(self, prices: "pd.Series", entries: "pd.Series", exits: "pd.Series") -> dict:
+        """Vectorised backtest via vectorbt. Returns sharpe, sortino, max_drawdown, win_rate, total_return, calmar_ratio."""
+        import vectorbt as vbt
+        import numpy as np
+
+        pf = vbt.Portfolio.from_signals(
+            close=prices, entries=entries, exits=exits,
+            fees=self.fees, slippage=self.slippage, init_cash=self.starting_capital,
+        )
+        total_return = float(pf.total_return())
+        max_dd = float(pf.max_drawdown())
+        valid_returns = pf.returns().dropna()
+        sharpe = float(pf.sharpe_ratio()) if len(valid_returns) > 1 else 0.0
+        try:
+            import empyrical
+            sortino = float(empyrical.sortino_ratio(valid_returns))
+            sortino = 0.0 if np.isnan(sortino) else sortino
+        except Exception:
+            sortino = 0.0
+        win_rate = 0.0
+        try:
+            df = pf.trades.records_readable
+            if len(df) > 0:
+                col = next((c for c in df.columns if c.lower() == "pnl"), None)
+                if col:
+                    win_rate = float((df[col] > 0).sum() / len(df))
+        except Exception:
+            pass
+        return {
+            "sharpe_ratio": 0.0 if np.isnan(sharpe) else sharpe,
+            "sortino_ratio": sortino,
+            "max_drawdown": max_dd,
+            "win_rate": win_rate,
+            "total_return": total_return,
+            "calmar_ratio": total_return / abs(max_dd) if abs(max_dd) > 1e-9 else 0.0,
+        }
+
+    def walk_forward(self, prices: "pd.Series", entries: "pd.Series", exits: "pd.Series") -> dict:
+        """70/30 in-sample / out-of-sample split."""
+        split = int(len(prices) * self.is_ratio)
+        return {
+            "in_sample": self.run(prices.iloc[:split], entries.iloc[:split], exits.iloc[:split]),
+            "out_of_sample": self.run(prices.iloc[split:], entries.iloc[split:], exits.iloc[split:]),
+        }
+
+

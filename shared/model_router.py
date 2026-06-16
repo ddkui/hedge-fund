@@ -1,7 +1,10 @@
-from ollama import AsyncClient
+import litellm
+from litellm import Router
 from shared.logging import get_logger
 
 logger = get_logger("model_router")
+
+litellm.drop_params = True  # silently ignore unsupported provider params
 
 AGENT_MODEL_MAP = {
     "research": "research_model",
@@ -15,6 +18,7 @@ AGENT_MODEL_MAP = {
     "hermes": "primary",
 }
 
+
 class ModelRouter:
     def __init__(
         self,
@@ -26,18 +30,37 @@ class ModelRouter:
         self._primary = primary
         self._shadow = shadow
         self._research = research_model or primary
-        self._client = AsyncClient(host=host)
+
+        def _entry(slot: str, model_name: str) -> dict:
+            return {
+                "model_name": slot,
+                "litellm_params": {
+                    "model": f"ollama/{model_name}",
+                    "api_base": host,
+                },
+            }
+
+        self._router = Router(
+            model_list=[
+                _entry("primary", primary),
+                _entry("shadow", shadow),
+                _entry("research_model", self._research),
+            ],
+            fallbacks=[{"primary": ["shadow"]}, {"research_model": ["shadow"]}],
+            num_retries=3,
+        )
 
     def model_for(self, agent_type: str) -> str:
         slot = AGENT_MODEL_MAP.get(agent_type, "primary")
         return {"primary": self._primary, "research_model": self._research}.get(slot, self._primary)
 
     async def chat(self, agent_type: str, messages: list[dict], **kwargs) -> str:
-        model = self.model_for(agent_type)
+        slot = AGENT_MODEL_MAP.get(agent_type, "primary")
+        response = await self._router.acompletion(model=slot, messages=messages)
+        content = response.choices[0].message.content
         try:
-            response = await self._client.chat(model=model, messages=messages, **kwargs)
-            return response.message.content
-        except Exception as e:
-            logger.warning("primary_model_failed", model=model, error=str(e))
-            response = await self._client.chat(model=self._shadow, messages=messages, **kwargs)
-            return response.message.content
+            cost = litellm.completion_cost(completion_response=response)
+            logger.info("llm_cost", agent=agent_type, cost_usd=round(cost, 6))
+        except Exception:
+            pass
+        return content

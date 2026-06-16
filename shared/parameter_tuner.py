@@ -19,14 +19,17 @@ class TuningProposal:
 
 
 class ParameterTuner:
-    """Auto-tunes agent parameters based on backtesting results."""
+    """Auto-tunes agent parameters. Uses Optuna (TPE + MedianPruner) when returns_series is provided."""
 
-    def __init__(self, auto_apply_threshold_pct: float = 10.0):
-        """
-        Args:
-            auto_apply_threshold_pct: Changes <= this % auto-apply
-        """
+    def __init__(
+        self,
+        auto_apply_threshold_pct: float = 10.0,
+        storage: Optional[str] = "sqlite:///optuna_tuning.db",
+        n_trials: int = 20,
+    ):
         self.auto_apply_threshold = auto_apply_threshold_pct
+        self._storage = storage
+        self._n_trials = n_trials
 
     def propose_change(
         self,
@@ -35,17 +38,16 @@ class ParameterTuner:
         parameter: str,
         current_value: Any,
         win_rate: float,
+        returns_series: Any = None,
     ) -> Optional[Dict[str, Any]]:
-        """
-        Propose parameter change if accuracy is low.
-        Returns None if agent is performing well (win_rate >= 65%)
-        """
         if win_rate >= 0.65:
             return None
 
+        if returns_series is not None:
+            return self._optuna_propose(agent, regime, parameter, current_value, returns_series)
+
         if win_rate < 0.45:
             proposed = self._adjust_parameter(parameter, current_value)
-
             return {
                 "agent": agent,
                 "regime": regime,
@@ -54,12 +56,67 @@ class ParameterTuner:
                 "proposed_value": proposed,
                 "reason": f"Low accuracy ({win_rate*100:.1f}%) - needs tuning",
                 "confidence_gain": self.calculate_confidence_gain(win_rate, 0.55),
-                "requires_approval": self.requires_approval(
-                    current_value, proposed, "percentage"
-                )
+                "requires_approval": self.requires_approval(current_value, proposed, "percentage"),
             }
 
         return None
+
+    def _optuna_propose(
+        self,
+        agent: str,
+        regime: str,
+        parameter: str,
+        current_value: float,
+        returns_series: Any,
+    ) -> Optional[Dict[str, Any]]:
+        import optuna
+        import numpy as np
+        from optuna.samplers import TPESampler
+        from optuna.pruners import MedianPruner
+        from sklearn.model_selection import TimeSeriesSplit
+
+        optuna.logging.set_verbosity(optuna.logging.WARNING)
+        study = optuna.create_study(
+            direction="maximize",
+            sampler=TPESampler(seed=42),
+            pruner=MedianPruner(),
+            study_name=f"{agent}_{regime}_{parameter}",
+            storage=self._storage,
+            load_if_exists=True,
+        )
+        returns_arr = np.array(returns_series, dtype=float)
+        tscv = TimeSeriesSplit(n_splits=3)
+
+        def objective(trial: optuna.Trial) -> float:
+            lo = current_value * 0.5 if current_value > 0 else current_value * 2.0
+            hi = current_value * 2.0 if current_value > 0 else current_value * 0.5
+            if lo > hi:
+                lo, hi = hi, lo
+            candidate = trial.suggest_float(parameter, lo, hi)
+            scores = []
+            for step, (_, test_idx) in enumerate(tscv.split(returns_arr)):
+                scaled = returns_arr[test_idx] * ((candidate / current_value) if current_value != 0 else 1.0)
+                std = float(np.std(scaled))
+                score = float(np.mean(scaled)) / std if std > 1e-9 else 0.0
+                trial.report(score, step)
+                if trial.should_prune():
+                    raise optuna.exceptions.TrialPruned()
+                scores.append(score)
+            return float(np.mean(scores))
+
+        study.optimize(objective, n_trials=self._n_trials)
+        best_val = study.best_params.get(parameter, current_value)
+        proposed = round(float(best_val), 4) if isinstance(current_value, float) else int(best_val)
+        return {
+            "agent": agent,
+            "regime": regime,
+            "parameter": parameter,
+            "current_value": current_value,
+            "proposed_value": proposed,
+            "reason": f"Optuna TPE optimisation ({self._n_trials} trials)",
+            "confidence_gain": self.calculate_confidence_gain(0.45, 0.55),
+            "requires_approval": self.requires_approval(current_value, proposed, "percentage"),
+        }
 
     def suggest_variations(
         self,
@@ -132,3 +189,5 @@ class ParameterTuner:
             return int(current_value * 1.05)
         else:
             return round(current_value * 1.05, 4)
+
+
