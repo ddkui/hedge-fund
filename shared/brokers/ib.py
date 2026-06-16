@@ -3,12 +3,42 @@ import asyncio
 from shared.brokers.base import BrokerAdapter, BrokerFill
 
 try:
-    from ib_insync import IB, MarketOrder, Stock, Crypto
+    from ib_insync import IB, MarketOrder, Stock, Crypto, Option, Future, Forex, Bond, CFD
     _IB_AVAILABLE = True
 except ImportError:
     _IB_AVAILABLE = False
 
-_CRYPTO_SYMBOLS = {"BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "ADAUSDT"}
+    class _Stub:  # noqa: E301
+        def __init__(self, *a, **kw):
+            pass
+
+    IB = Stock = Crypto = Option = Future = Forex = Bond = CFD = MarketOrder = _Stub
+
+
+def _build_contract(trade: dict):
+    """Route trade dict to the correct ib_insync contract type."""
+    symbol = trade["symbol"].replace("USDT", "").replace("USD", "")
+    asset_class = trade.get("asset_class", "stock")
+
+    if asset_class == "option":
+        return Option(
+            trade["symbol"],
+            trade["expiry"],
+            trade["strike"],
+            trade["right"],
+            exchange=trade.get("exchange", "SMART"),
+        )
+    if asset_class == "future":
+        return Future(symbol, trade["expiry"], exchange=trade.get("exchange", "GLOBEX"))
+    if asset_class == "forex":
+        return Forex(trade["symbol"])
+    if asset_class == "bond":
+        return Bond(symbol=trade["symbol"])
+    if asset_class == "cfd":
+        return CFD(symbol, exchange=trade.get("exchange", "SMART"), currency=trade.get("currency", "USD"))
+    if asset_class == "crypto":
+        return Crypto(symbol, "PAXOS", "USD")
+    return Stock(symbol, "SMART", "USD")
 
 
 class IBAdapter(BrokerAdapter):
@@ -42,11 +72,7 @@ class IBAdapter(BrokerAdapter):
                 return BrokerFill(broker_name=self.name, trade_id=trade["id"],
                                   status="error", fill_price=None, fill_qty=None,
                                   error_msg="IB Gateway/TWS not reachable")
-            symbol = trade["symbol"].replace("USDT", "").replace("USD", "")
-            if trade.get("asset_class") == "crypto" or trade["symbol"] in _CRYPTO_SYMBOLS:
-                contract = Crypto(symbol, "PAXOS", "USD")
-            else:
-                contract = Stock(symbol, "SMART", "USD")
+            contract = _build_contract(trade)
             action = "BUY" if trade["action"] == "long" else "SELL"
             order = MarketOrder(action, float(trade["quantity"]))
             trade_obj = self._ib.placeOrder(contract, order)

@@ -125,3 +125,132 @@ def test_registry_empty_when_no_file():
     from shared.brokers.registry import BrokerRegistry
     registry = BrokerRegistry("nonexistent.yaml").load()
     assert registry.get_all() == []
+
+
+def _make_ib_adapter_with_connected_ib():
+    """Return an IBAdapter wired with a pre-connected mock IB instance."""
+    from shared.brokers.ib import IBAdapter
+    adapter = IBAdapter.__new__(IBAdapter)
+    adapter.name = "ib-paper"
+    adapter.config = {}
+    adapter._host = "127.0.0.1"
+    adapter._port = 7497
+    adapter._client_id = 1
+
+    trade_result = MagicMock()
+    trade_result.orderStatus.status = "Filled"
+    trade_result.orderStatus.avgFillPrice = 100.0
+
+    mock_ib = MagicMock()
+    mock_ib.isConnected.return_value = True
+    mock_ib.placeOrder.return_value = trade_result
+    adapter._ib = mock_ib
+    return adapter, mock_ib
+
+
+@pytest.mark.asyncio
+async def test_ib_routes_option_asset_class():
+    adapter, _ = _make_ib_adapter_with_connected_ib()
+    trade = {
+        "id": 1, "symbol": "AAPL", "action": "long", "quantity": 1.0,
+        "asset_class": "option",
+        "expiry": "20241220", "strike": 200.0, "right": "C",
+    }
+    with patch("asyncio.sleep", AsyncMock()), \
+         patch("shared.brokers.ib.Option") as mock_cls:
+        mock_cls.return_value = MagicMock()
+        fill = await adapter.fill(trade)
+    mock_cls.assert_called_once_with("AAPL", "20241220", 200.0, "C", exchange="SMART")
+    assert fill.status == "filled"
+
+
+@pytest.mark.asyncio
+async def test_ib_routes_future_asset_class():
+    adapter, _ = _make_ib_adapter_with_connected_ib()
+    trade = {
+        "id": 2, "symbol": "ES", "action": "long", "quantity": 1.0,
+        "asset_class": "future",
+        "expiry": "20241220", "exchange": "GLOBEX",
+    }
+    with patch("asyncio.sleep", AsyncMock()), \
+         patch("shared.brokers.ib.Future") as mock_cls:
+        mock_cls.return_value = MagicMock()
+        fill = await adapter.fill(trade)
+    mock_cls.assert_called_once_with("ES", "20241220", exchange="GLOBEX")
+    assert fill.status == "filled"
+
+
+@pytest.mark.asyncio
+async def test_ib_routes_forex_asset_class():
+    adapter, _ = _make_ib_adapter_with_connected_ib()
+    trade = {
+        "id": 3, "symbol": "EURUSD", "action": "long", "quantity": 10000.0,
+        "asset_class": "forex",
+    }
+    with patch("asyncio.sleep", AsyncMock()), \
+         patch("shared.brokers.ib.Forex") as mock_cls:
+        mock_cls.return_value = MagicMock()
+        fill = await adapter.fill(trade)
+    mock_cls.assert_called_once_with("EURUSD")
+    assert fill.status == "filled"
+
+
+@pytest.mark.asyncio
+async def test_ib_routes_bond_asset_class():
+    adapter, _ = _make_ib_adapter_with_connected_ib()
+    trade = {
+        "id": 4, "symbol": "037833100", "action": "long", "quantity": 1.0,
+        "asset_class": "bond",
+    }
+    with patch("asyncio.sleep", AsyncMock()), \
+         patch("shared.brokers.ib.Bond") as mock_cls:
+        mock_cls.return_value = MagicMock()
+        fill = await adapter.fill(trade)
+    mock_cls.assert_called_once_with(symbol="037833100")
+    assert fill.status == "filled"
+
+
+@pytest.mark.asyncio
+async def test_ib_routes_cfd_asset_class():
+    adapter, _ = _make_ib_adapter_with_connected_ib()
+    trade = {
+        "id": 5, "symbol": "AAPL", "action": "long", "quantity": 10.0,
+        "asset_class": "cfd",
+        "exchange": "SMART", "currency": "USD",
+    }
+    with patch("asyncio.sleep", AsyncMock()), \
+         patch("shared.brokers.ib.CFD") as mock_cls:
+        mock_cls.return_value = MagicMock()
+        fill = await adapter.fill(trade)
+    mock_cls.assert_called_once_with("AAPL", exchange="SMART", currency="USD")
+    assert fill.status == "filled"
+
+
+@pytest.mark.asyncio
+async def test_ib_routes_crypto_by_asset_class():
+    adapter, _ = _make_ib_adapter_with_connected_ib()
+    trade = {
+        "id": 6, "symbol": "BTCUSDT", "action": "long", "quantity": 0.1,
+        "asset_class": "crypto",
+    }
+    with patch("asyncio.sleep", AsyncMock()), \
+         patch("shared.brokers.ib.Crypto") as mock_cls:
+        mock_cls.return_value = MagicMock()
+        fill = await adapter.fill(trade)
+    mock_cls.assert_called_once_with("BTC", "PAXOS", "USD")
+    assert fill.status == "filled"
+
+
+@pytest.mark.asyncio
+async def test_ib_routes_stock_as_default():
+    adapter, _ = _make_ib_adapter_with_connected_ib()
+    trade = {
+        "id": 7, "symbol": "TSLA", "action": "long", "quantity": 5.0,
+        "asset_class": "stock",
+    }
+    with patch("asyncio.sleep", AsyncMock()), \
+         patch("shared.brokers.ib.Stock") as mock_cls:
+        mock_cls.return_value = MagicMock()
+        fill = await adapter.fill(trade)
+    mock_cls.assert_called_once_with("TSLA", "SMART", "USD")
+    assert fill.status == "filled"
