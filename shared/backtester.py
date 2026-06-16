@@ -210,4 +210,5 @@ class Backtester:
             "paper_pnl": paper_pnl,
             "real_pnl": real_pnl,
             "slippage_cost": paper_pnl - real_pnl,
+            "difference": real_pnl - paper_pnl,
         }

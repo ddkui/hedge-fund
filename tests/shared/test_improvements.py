@@ -5,6 +5,7 @@ Tests are modular and extensible - add new test cases without breaking existing 
 """
 import pytest
 from datetime import datetime, timezone
+from unittest.mock import AsyncMock
 from shared.circuit_breaker import CircuitBreaker
 from shared.broker_failover import BrokerFailover
 from shared.position_sizer import PositionSizer
@@ -77,7 +78,7 @@ class TestBrokerFailover:
 
         from shared.brokers.base import BrokerFill
         successful_fills = [
-            BrokerFill(broker_name="alpaca", status="filled", fill_price=100.0, error_msg=None)
+            BrokerFill(broker_name="alpaca", trade_id=1, status="filled", fill_price=100.0, fill_qty=10.0, error_msg=None)
         ]
 
         result = await failover.execute_with_failover({}, successful_fills)
@@ -334,7 +335,16 @@ class TestAgentMemory:
             memory.update_signal_outcome("sentiment", "expansion", False)
 
         multiplier = memory.get_confidence_multiplier("sentiment", "expansion")
-        assert multiplier == 1.3
+        # Thompson Sampling draws from Beta(wins+1, losses+1) — stochastic but biased toward win rate
+        assert 0.6 <= multiplier <= 1.4, f"multiplier {multiplier} out of valid range"
+        # With 70% win rate, expected value is 0.6 + 0.8*0.7 = 1.16; most samples should be > 1.0
+        # Run 10 draws and verify mean is above 1.0
+        from unittest.mock import patch
+        from scipy.stats import beta as beta_dist
+        import numpy as np
+        np.random.seed(42)
+        samples = [memory.get_confidence_multiplier("sentiment", "expansion") for _ in range(10)]
+        assert sum(samples) / len(samples) > 1.0, "Mean multiplier should be > 1.0 for 70% win rate"
 
     def test_confidence_multiplier_poor(self):
         """Poor track record should reduce confidence."""
@@ -345,7 +355,12 @@ class TestAgentMemory:
             memory.update_signal_outcome("research", "crisis", False)
 
         multiplier = memory.get_confidence_multiplier("research", "crisis")
-        assert multiplier < 1.0
+        # Thompson Sampling: Beta(4, 8) mean=0.333 → expected multiplier ~0.87
+        # Use mean over multiple draws to avoid stochastic failures
+        import numpy as np
+        np.random.seed(99)
+        samples = [memory.get_confidence_multiplier("research", "crisis") for _ in range(20)]
+        assert sum(samples) / len(samples) < 1.0, "Mean multiplier should be < 1.0 for 30% win rate"
 
     def test_insufficient_data_neutral(self):
         """Less than 10 signals = neutral multiplier."""
