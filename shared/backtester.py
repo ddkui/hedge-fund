@@ -85,16 +85,44 @@ class Backtester:
         losing_trades = len([t for t in closed if t.pnl <= 0])
         win_rate = winning_trades / len(closed) if closed else 0
 
-        returns = (total_pnl / self.starting_capital) * 100
-
-        return {
+        result = {
             "total_trades": len(closed),
             "winning_trades": winning_trades,
             "losing_trades": losing_trades,
             "win_rate": win_rate,
             "total_pnl": total_pnl,
-            "total_returns_pct": returns,
+            "total_returns_pct": (total_pnl / self.starting_capital) * 100,
         }
+
+        if len(closed) >= 2:
+            try:
+                import empyrical
+                import pandas as pd
+                import numpy as np
+
+                trade_returns = pd.Series([
+                    t.pnl / (t.entry_price * t.quantity)
+                    if t.entry_price * t.quantity != 0 else 0.0
+                    for t in closed
+                ])
+
+                def _safe(fn, *args, **kw):
+                    try:
+                        v = float(fn(*args, **kw))
+                        return 0.0 if (np.isnan(v) or np.isinf(v)) else v
+                    except Exception:
+                        return 0.0
+
+                result.update({
+                    "sharpe_ratio": _safe(empyrical.sharpe_ratio, trade_returns),
+                    "max_drawdown": _safe(empyrical.max_drawdown, trade_returns),
+                    "annual_return": _safe(empyrical.annual_return, trade_returns),
+                    "calmar_ratio": _safe(empyrical.calmar_ratio, trade_returns),
+                })
+            except Exception:
+                pass
+
+        return result
 
     def compare_paper_vs_real(
         self,
@@ -123,12 +151,20 @@ class Backtester:
         max_dd = float(pf.max_drawdown())
         valid_returns = pf.returns().dropna()
         sharpe = float(pf.sharpe_ratio()) if len(valid_returns) > 1 else 0.0
+        def _safe(fn, *args, **kw):
+            try:
+                v = float(fn(*args, **kw))
+                return 0.0 if (np.isnan(v) or np.isinf(v)) else v
+            except Exception:
+                return 0.0
+
         try:
             import empyrical
-            sortino = float(empyrical.sortino_ratio(valid_returns))
-            sortino = 0.0 if np.isnan(sortino) else sortino
+            sortino = _safe(empyrical.sortino_ratio, valid_returns)
+            annual_return = _safe(empyrical.annual_return, valid_returns)
         except Exception:
             sortino = 0.0
+            annual_return = 0.0
         win_rate = 0.0
         try:
             df = pf.trades.records_readable
@@ -138,17 +174,39 @@ class Backtester:
                     win_rate = float((df[col] > 0).sum() / len(df))
         except Exception:
             pass
+        sharpe = 0.0 if np.isnan(sharpe) else sharpe
         return {
-            "sharpe_ratio": 0.0 if np.isnan(sharpe) else sharpe,
+            "sharpe_ratio": sharpe,
             "sortino_ratio": sortino,
             "max_drawdown": max_dd,
             "win_rate": win_rate,
             "total_return": total_return,
+            "annual_return": annual_return,
             "calmar_ratio": total_return / abs(max_dd) if abs(max_dd) > 1e-9 else 0.0,
         }
 
-    def walk_forward(self, prices: "pd.Series", entries: "pd.Series", exits: "pd.Series") -> dict:
-        """70/30 in-sample / out-of-sample split."""
+    def walk_forward(
+        self,
+        prices: "pd.Series",
+        entries: "pd.Series",
+        exits: "pd.Series",
+        n_splits: int | None = None,
+    ) -> "dict | list[dict]":
+        """Walk-forward validation.
+
+        n_splits=None: 70/30 in-sample/out-of-sample split → dict.
+        n_splits=N:    N equal time windows → list[dict] with per-window metrics.
+        """
+        if n_splits is not None:
+            window = len(prices) // n_splits
+            results = []
+            for i in range(n_splits):
+                s = i * window
+                e = s + window if i < n_splits - 1 else len(prices)
+                metrics = self.run(prices.iloc[s:e], entries.iloc[s:e], exits.iloc[s:e])
+                results.append({"window": i, **metrics})
+            return results
+
         split = int(len(prices) * self.is_ratio)
         return {
             "in_sample": self.run(prices.iloc[:split], entries.iloc[:split], exits.iloc[:split]),

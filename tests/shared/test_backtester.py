@@ -88,3 +88,38 @@ def test_vector_backtester_no_trades_returns_safe_defaults():
     exits = pd.Series(False, index=dates)
     metrics = vbt.run(prices, entries, exits)
     assert metrics["win_rate"] == 0.0
+
+
+def test_run_includes_annual_return():
+    vbt = Backtester()
+    prices, entries, exits = _make_series()
+    metrics = vbt.run(prices, entries, exits)
+    assert "annual_return" in metrics
+    assert isinstance(metrics["annual_return"], float)
+
+
+def test_walk_forward_n_splits_returns_list():
+    vbt = Backtester()
+    prices, entries, exits = _make_series(300)
+    result = vbt.walk_forward(prices, entries, exits, n_splits=3)
+    assert isinstance(result, list)
+    assert len(result) == 3
+    for window in result:
+        assert "sharpe_ratio" in window
+        assert "total_return" in window
+        assert "max_drawdown" in window
+
+
+def test_calculate_metrics_includes_empyrical_keys():
+    bt = Backtester()
+    for i in range(10):
+        exit_p = 106.0 if i % 2 == 0 else 94.0
+        t = BacktestTrade(
+            symbol="AAPL", date=datetime(2024, 1, i + 1),
+            action="long", entry_price=100.0, exit_price=exit_p, quantity=1.0,
+        )
+        t.calculate_pnl()
+        bt.add_trade(t)
+    metrics = bt.calculate_metrics()
+    for key in ("sharpe_ratio", "max_drawdown", "annual_return", "calmar_ratio"):
+        assert key in metrics, f"missing empyrical key: {key}"
