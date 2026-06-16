@@ -1643,6 +1643,6 @@ pytest tests/ --cov=agents --cov=shared --cov=gateway --cov-report=html
 
 ---
 
-Built with ❤️ using FastAPI, React, TimescaleDB, Ollama, litellm, vectorbt, hmmlearn, Optuna, Redis, and autonomous intelligence.
+Built with ❤️ using FastAPI, React, TimescaleDB, Ollama, asyncio, and autonomous intelligence.
 
 **Status: Production Ready** 🚀
