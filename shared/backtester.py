@@ -6,6 +6,8 @@ Compare paper vs real execution.
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Optional
+import numpy as np
+import pandas as pd
 
 
 @dataclass
@@ -20,26 +22,20 @@ class BacktestTrade:
     returns_pct: Optional[float] = None
 
     def calculate_pnl(self) -> Optional[float]:
-        """Calculate P&L from entry to exit."""
         if self.exit_price is None:
             return None
-
         pnl = (self.exit_price - self.entry_price) * self.quantity
         if self.action == "short":
-            pnl = -pnl  # Reverse sign for short
-
+            pnl = -pnl
         self.pnl = pnl
         return pnl
 
     def calculate_returns_pct(self) -> Optional[float]:
-        """Calculate return %."""
         if self.entry_price == 0:
             return None
-
         returns = ((self.exit_price - self.entry_price) / self.entry_price) * 100
         if self.action == "short":
             returns = -returns
-
         self.returns_pct = returns
         return returns
 
@@ -60,22 +56,114 @@ class Backtester:
         self.is_ratio = is_ratio
 
     def add_trade(self, trade: BacktestTrade) -> None:
-        """Add a trade to backtest."""
         self.trades.append(trade)
 
     def close_trade(self, symbol: str, exit_price: float) -> None:
-        """Close oldest open trade for symbol."""
-        open_trades = [
-            t for t in self.trades
-            if t.symbol == symbol and t.exit_price is None
-        ]
+        open_trades = [t for t in self.trades if t.symbol == symbol and t.exit_price is None]
         if open_trades:
             open_trades[0].exit_price = exit_price
             open_trades[0].calculate_pnl()
             open_trades[0].calculate_returns_pct()
 
+    def _compute_metrics(self, returns: pd.Series) -> dict:
+        """Compute Sharpe, max drawdown, calmar, annual return from a returns series."""
+        if returns.empty or returns.sum() == 0:
+            return {
+                "sharpe_ratio": 0.0,
+                "max_drawdown": 0.0,
+                "calmar_ratio": 0.0,
+                "annual_return": 0.0,
+                "total_return": 0.0,
+                "win_rate": 0.0,
+            }
+        try:
+            import empyrical
+            sharpe = float(empyrical.sharpe_ratio(returns, annualization=252) or 0.0)
+            max_dd = float(empyrical.max_drawdown(returns) or 0.0)
+            calmar = float(empyrical.calmar_ratio(returns, annualization=252) or 0.0)
+            annual = float(empyrical.annual_return(returns, annualization=252) or 0.0)
+        except Exception:
+            sharpe = 0.0
+            max_dd = float((returns.cumsum().cummax() - returns.cumsum()).max() or 0.0)
+            calmar = 0.0
+            annual = 0.0
+
+        total_return = float(returns.sum())
+        win_rate = float((returns > 0).sum() / len(returns)) if len(returns) > 0 else 0.0
+
+        return {
+            "sharpe_ratio": sharpe,
+            "max_drawdown": max_dd,
+            "calmar_ratio": calmar,
+            "annual_return": annual,
+            "total_return": total_return,
+            "win_rate": win_rate,
+        }
+
+    def run(
+        self,
+        prices: pd.Series,
+        entries: pd.Series,
+        exits: pd.Series,
+    ) -> dict:
+        """
+        Simulate entries/exits on a price series with slippage and fees applied.
+        Returns performance metrics dict.
+        """
+        if prices.empty:
+            return {"sharpe_ratio": 0.0, "max_drawdown": 0.0, "calmar_ratio": 0.0,
+                    "annual_return": 0.0, "total_return": 0.0, "win_rate": 0.0}
+
+        portfolio_returns = []
+        in_position = False
+        entry_price = None
+
+        for i, (date, price) in enumerate(prices.items()):
+            if not in_position and entries.get(date, False):
+                # Apply slippage and fees on entry
+                entry_price = price * (1 + self.slippage + self.fees)
+                in_position = True
+            elif in_position and exits.get(date, False):
+                # Apply slippage and fees on exit
+                exit_price = price * (1 - self.slippage - self.fees)
+                ret = (exit_price - entry_price) / entry_price
+                portfolio_returns.append(ret)
+                in_position = False
+                entry_price = None
+
+        returns_series = pd.Series(portfolio_returns, dtype=float)
+        metrics = self._compute_metrics(returns_series)
+        metrics["num_trades"] = len(portfolio_returns)
+        return metrics
+
+    def walk_forward(
+        self,
+        prices: pd.Series,
+        entries: pd.Series,
+        exits: pd.Series,
+        n_splits: int = 5,
+    ) -> dict:
+        """
+        Walk-forward validation: split into in-sample / out-of-sample windows.
+        Returns aggregated metrics for each.
+        """
+        n = len(prices)
+        split = int(n * self.is_ratio)
+
+        in_prices = prices.iloc[:split]
+        in_entries = entries.iloc[:split]
+        in_exits = exits.iloc[:split]
+
+        out_prices = prices.iloc[split:]
+        out_entries = entries.iloc[split:]
+        out_exits = exits.iloc[split:]
+
+        return {
+            "in_sample": self.run(in_prices, in_entries, in_exits),
+            "out_of_sample": self.run(out_prices, out_entries, out_exits),
+        }
+
     def calculate_metrics(self) -> dict:
-        """Calculate backtest performance metrics."""
         closed = [t for t in self.trades if t.pnl is not None]
         if not closed:
             return {}
@@ -97,28 +185,15 @@ class Backtester:
         if len(closed) >= 2:
             try:
                 import empyrical
-                import pandas as pd
-                import numpy as np
-
                 trade_returns = pd.Series([
                     t.pnl / (t.entry_price * t.quantity)
                     if t.entry_price * t.quantity != 0 else 0.0
                     for t in closed
                 ])
-
-                def _safe(fn, *args, **kw):
-                    try:
-                        v = float(fn(*args, **kw))
-                        return 0.0 if (np.isnan(v) or np.isinf(v)) else v
-                    except Exception:
-                        return 0.0
-
-                result.update({
-                    "sharpe_ratio": _safe(empyrical.sharpe_ratio, trade_returns),
-                    "max_drawdown": _safe(empyrical.max_drawdown, trade_returns),
-                    "annual_return": _safe(empyrical.annual_return, trade_returns),
-                    "calmar_ratio": _safe(empyrical.calmar_ratio, trade_returns),
-                })
+                result["sharpe_ratio"] = float(empyrical.sharpe_ratio(trade_returns) or 0.0)
+                result["max_drawdown"] = float(empyrical.max_drawdown(trade_returns) or 0.0)
+                result["calmar_ratio"] = float(empyrical.calmar_ratio(trade_returns) or 0.0)
+                result["annual_return"] = float(empyrical.annual_return(trade_returns) or 0.0)
             except Exception:
                 pass
 
@@ -134,83 +209,5 @@ class Backtester:
         return {
             "paper_pnl": paper_pnl,
             "real_pnl": real_pnl,
-            "difference": real_pnl - paper_pnl,
-            "slippage_pct": ((real_pnl - paper_pnl) / paper_pnl * 100) if paper_pnl != 0 else 0,
+            "slippage_cost": paper_pnl - real_pnl,
         }
-
-    def run(self, prices: "pd.Series", entries: "pd.Series", exits: "pd.Series") -> dict:
-        """Vectorised backtest via vectorbt. Returns sharpe, sortino, max_drawdown, win_rate, total_return, calmar_ratio."""
-        import vectorbt as vbt
-        import numpy as np
-
-        pf = vbt.Portfolio.from_signals(
-            close=prices, entries=entries, exits=exits,
-            fees=self.fees, slippage=self.slippage, init_cash=self.starting_capital,
-        )
-        total_return = float(pf.total_return())
-        max_dd = float(pf.max_drawdown())
-        valid_returns = pf.returns().dropna()
-        sharpe = float(pf.sharpe_ratio()) if len(valid_returns) > 1 else 0.0
-        def _safe(fn, *args, **kw):
-            try:
-                v = float(fn(*args, **kw))
-                return 0.0 if (np.isnan(v) or np.isinf(v)) else v
-            except Exception:
-                return 0.0
-
-        try:
-            import empyrical
-            sortino = _safe(empyrical.sortino_ratio, valid_returns)
-            annual_return = _safe(empyrical.annual_return, valid_returns)
-        except Exception:
-            sortino = 0.0
-            annual_return = 0.0
-        win_rate = 0.0
-        try:
-            df = pf.trades.records_readable
-            if len(df) > 0:
-                col = next((c for c in df.columns if c.lower() == "pnl"), None)
-                if col:
-                    win_rate = float((df[col] > 0).sum() / len(df))
-        except Exception:
-            pass
-        sharpe = 0.0 if np.isnan(sharpe) else sharpe
-        return {
-            "sharpe_ratio": sharpe,
-            "sortino_ratio": sortino,
-            "max_drawdown": max_dd,
-            "win_rate": win_rate,
-            "total_return": total_return,
-            "annual_return": annual_return,
-            "calmar_ratio": total_return / abs(max_dd) if abs(max_dd) > 1e-9 else 0.0,
-        }
-
-    def walk_forward(
-        self,
-        prices: "pd.Series",
-        entries: "pd.Series",
-        exits: "pd.Series",
-        n_splits: int | None = None,
-    ) -> "dict | list[dict]":
-        """Walk-forward validation.
-
-        n_splits=None: 70/30 in-sample/out-of-sample split → dict.
-        n_splits=N:    N equal time windows → list[dict] with per-window metrics.
-        """
-        if n_splits is not None:
-            window = len(prices) // n_splits
-            results = []
-            for i in range(n_splits):
-                s = i * window
-                e = s + window if i < n_splits - 1 else len(prices)
-                metrics = self.run(prices.iloc[s:e], entries.iloc[s:e], exits.iloc[s:e])
-                results.append({"window": i, **metrics})
-            return results
-
-        split = int(len(prices) * self.is_ratio)
-        return {
-            "in_sample": self.run(prices.iloc[:split], entries.iloc[:split], exits.iloc[:split]),
-            "out_of_sample": self.run(prices.iloc[split:], entries.iloc[split:], exits.iloc[split:]),
-        }
-
-
